@@ -44,23 +44,8 @@ class AirbyteConnectorRunner {
             val ctxBuilder: ApplicationContextBuilder =
                 ApplicationContext.builder(cls, Environment.CLI, connectorType.name.lowercase())
                     .propertySources(configPropertySource, commandLinePropertySource)
-            try {
-                val ctx: ApplicationContext = ctxBuilder.start()
-                run(cls, ctx, *args)
-            } catch (e: Throwable) {
-                logger.error(e) { "Unable to perform command." }
-                // Many of the exceptions thrown are nested inside layers of RuntimeExceptions. An
-                // attempt is made to find the root exception that corresponds to a configuration
-                // error. If that does not exist, we just return the original exception.
-                ApmTraceUtils.addExceptionToTrace(e)
-                val rootThrowable = ConnectorExceptionUtil.getRootConfigError(Exception(e))
-                val displayMessage = ConnectorExceptionUtil.getDisplayMessage(rootThrowable)
-                // If the connector throws a config error, a trace message with the relevant
-                // message should be surfaced.
-                if (ConnectorExceptionUtil.isConfigError(rootThrowable)) {
-                    AirbyteTraceMessageUtility.emitConfigErrorTrace(e, displayMessage)
-                }
-            }
+            val ctx: ApplicationContext = ctxBuilder.start()
+            run(cls, ctx, *args)
         }
 
         @JvmStatic

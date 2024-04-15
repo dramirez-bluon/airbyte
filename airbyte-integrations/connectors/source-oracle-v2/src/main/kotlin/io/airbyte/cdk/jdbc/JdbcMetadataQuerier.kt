@@ -16,6 +16,7 @@ private val logger = KotlinLogging.logger {}
 /** Default implementation of [MetadataQuerier]. */
 @Prototype
 private class JdbcMetadataQuerier(
+    val sourceOperations: SourceOperations,
     val configSupplier: ConnectorConfigurationSupplier<SourceConnectorConfiguration>,
     val jdbcConnectionFactory: JdbcConnectionFactory
 ) : MetadataQuerier {
@@ -26,31 +27,43 @@ private class JdbcMetadataQuerier(
     val conn: Connection by connDelegate
 
     override fun tableNames(): List<TableName> {
-        val results = mutableListOf<TableName>()
-        for (schema in config.schemas) {
-            val rs: ResultSet = conn.metaData.getTables(null, schema, null, null)
-            while (rs.next()) {
-                val tableName =
+        logger.info { "Querying table names for catalog discovery." }
+        try {
+            val results = mutableListOf<TableName>()
+            for (schema in config.schemas) {
+                val rs: ResultSet = conn.metaData.getTables(null, schema, null, null)
+                while (rs.next()) {
+                    val tableName =
                         TableName(
-                                catalog = rs.getString("TABLE_CAT"),
-                                schema = rs.getString("TABLE_SCHEM"),
-                                name = rs.getString("TABLE_NAME"),
-                                type = rs.getString("TABLE_TYPE") ?: "",
+                            catalog = rs.getString("TABLE_CAT"),
+                            schema = rs.getString("TABLE_SCHEM"),
+                            name = rs.getString("TABLE_NAME"),
+                            type = rs.getString("TABLE_TYPE") ?: "",
                         )
-                results.add(tableName)
+                    results.add(tableName)
+                }
             }
+            logger.info { "Discovered ${results.size} table(s)." }
+            return results.sortedBy {
+                "${it.catalog ?: ""}.${it.schema ?: ""}.${it.name}.${it.type}"
+            }
+        } catch (e: Exception) {
+            throw RuntimeException("Table name discovery query failed with exception.", e)
         }
-        return results.sortedBy { "${it.catalog ?: ""}.${it.schema ?: ""}.${it.name}.${it.type}" }
     }
 
-    override fun columnMetadata(table: TableName, sql: String): List<ColumnMetadata> {
-        table.catalog?.let { conn.catalog = it }
-        table.schema?.let { conn.schema = it }
-        conn.createStatement().use { stmt: Statement ->
-            stmt.fetchSize = 1
-            val meta: ResultSetMetaData = stmt.executeQuery(sql).metaData
-            return (1..meta.columnCount).map {
-                ColumnMetadata(
+    override fun columnMetadata(table: TableName): List<ColumnMetadata> {
+        val sql: String = sourceOperations.selectStarFromTableLimit0(table)
+        logger.info { "Querying $sql for catalog discovery." }
+        try {
+            table.catalog?.let { conn.catalog = it }
+            table.schema?.let { conn.schema = it }
+            conn.createStatement().use { stmt: Statement ->
+                stmt.fetchSize = 1
+                val meta: ResultSetMetaData = stmt.executeQuery(sql).metaData
+                logger.info { "Discovered ${meta.columnCount} columns in $table." }
+                return (1..meta.columnCount).map {
+                    ColumnMetadata(
                         name = meta.getColumnName(it),
                         type = swallow { meta.getColumnType(it) }?.let { JDBCType.valueOf(it) },
                         typeName = swallow { meta.getColumnTypeName(it) },
@@ -69,8 +82,11 @@ private class JdbcMetadataQuerier(
                         displaySize = swallow { meta.getColumnDisplaySize(it) },
                         precision = swallow { meta.getPrecision(it) },
                         scale = swallow { meta.getScale(it) },
-                )
+                    )
+                }
             }
+        } catch (e: SQLException) {
+            throw RuntimeException("Column metadata query failed with exception.", e)
         }
     }
 
@@ -84,16 +100,23 @@ private class JdbcMetadataQuerier(
     }
 
     override fun primaryKeys(table: TableName): List<List<String>> {
+        logger.info { "Querying primary key metadata for $table for catalog discovery." }
         val pksMap = mutableMapOf<String?, MutableMap<Int, String>>()
-        val rs: ResultSet = conn.metaData.getPrimaryKeys(table.catalog, table.schema, table.name)
-        while (rs.next()) {
-            val pkName: String = rs.getString("PK_NAME") ?: ""
-            val pkMap: MutableMap<Int, String> = pksMap.getOrDefault(pkName, mutableMapOf())
-            val pkOrdinal: Int = rs.getInt("KEY_SEQ")
-            val pkCol: String = rs.getString("COLUMN_NAME")
-            pkMap[pkOrdinal] = pkCol
-            pksMap[pkName] = pkMap
+        try {
+            val rs: ResultSet =
+                conn.metaData.getPrimaryKeys(table.catalog, table.schema, table.name)
+            while (rs.next()) {
+                val pkName: String = rs.getString("PK_NAME") ?: ""
+                val pkMap: MutableMap<Int, String> = pksMap.getOrDefault(pkName, mutableMapOf())
+                val pkOrdinal: Int = rs.getInt("KEY_SEQ")
+                val pkCol: String = rs.getString("COLUMN_NAME")
+                pkMap[pkOrdinal] = pkCol
+                pksMap[pkName] = pkMap
+            }
+        } catch (e: SQLException) {
+            throw RuntimeException("Primary key metadata query failed with exception.", e)
         }
+        logger.info { "Found ${pksMap.size} primary key(s) in $table." }
         return pksMap.toSortedMap(Comparator.naturalOrder<String>()).values.map {
             it.toSortedMap().values.toList()
         }
@@ -104,6 +127,5 @@ private class JdbcMetadataQuerier(
             logger.info { "Closing JDBC connection." }
             conn.close()
         }
-        jdbcConnectionFactory.close()
     }
 }

@@ -14,6 +14,7 @@ import com.networknt.schema.SpecVersion
 import io.airbyte.commons.exceptions.ConfigErrorException
 import io.airbyte.commons.jackson.MoreMappers
 import io.airbyte.protocol.models.v0.AirbyteStateMessage
+import io.airbyte.protocol.models.v0.AirbyteStream
 import io.airbyte.protocol.models.v0.ConfiguredAirbyteCatalog
 import io.github.oshai.kotlinlogging.KotlinLogging
 import io.micronaut.context.annotation.ConfigurationProperties
@@ -53,7 +54,14 @@ private class ConfiguredAirbyteCatalogSupplierImpl : ConfiguredAirbyteCatalogSup
     var json: String = "{}"
 
     val value: ConfiguredAirbyteCatalog by lazy {
-        JsonUtils.parseOne(ConfiguredAirbyteCatalog::class.java, json)
+        JsonUtils.parseOne(ConfiguredAirbyteCatalog::class.java, json).also { cat ->
+            for (configuredStream in cat.streams) {
+                val stream: AirbyteStream = configuredStream.stream
+                if (stream.name == null) {
+                    throw ConfigErrorException("Configured catalog is missing stream name.")
+                }
+            }
+        }
     }
 
     override fun get(): ConfiguredAirbyteCatalog = value

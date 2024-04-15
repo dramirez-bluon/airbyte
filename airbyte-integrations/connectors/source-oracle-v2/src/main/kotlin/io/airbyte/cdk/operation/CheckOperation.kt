@@ -36,10 +36,8 @@ class CheckOperation(
 
     /** Wraps [doCheck] in exception handling because CHECK must always exit cleanly. */
     override fun execute() {
-        logger.info { "Performing CHECK operation." }
         try {
             doCheck()
-            // TODO: check that the exception handling below is correct.
         } catch (e: SQLException) {
             logger.debug(e) { "SQLException while checking config." }
             val message: String = listOfNotNull(

@@ -112,7 +112,7 @@ class IntegrationCommand : Runnable {
 
     override fun run() {
         try {
-            operation.execute()
+            operation.executeWithExceptionHandling()
         } finally {
             logger.info { "Completed integration: $connectorName" }
         }

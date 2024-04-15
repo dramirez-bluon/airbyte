@@ -27,12 +27,10 @@ class SpecOperation(
     override val type = OperationType.SPEC
 
     override fun execute() {
-        logger.info { "Performing SPEC operation." }
         val spec = ConnectorSpecification()
         try {
             spec.documentationUrl = URI.create(documentationUrl)
         } catch (e: Exception) {
-            logger.error(e) { "Invalid documentation URL '$documentationUrl'." }
             throw OperationExecutionException(
                 "Failed to generate connector specification " +
                     "using documentation URL '$documentationUrl'.",
@@ -42,9 +40,6 @@ class SpecOperation(
         try {
             spec.connectionSpecification = configJsonObjectSupplier.jsonSchema
         } catch (e: Exception) {
-            logger.error(e) {
-                "Invalid configuration class '${configJsonObjectSupplier.valueClass}'."
-            }
             throw OperationExecutionException(
                 "Failed to generate connector specification " +
                     "using configuration class '${configJsonObjectSupplier.valueClass}'.",

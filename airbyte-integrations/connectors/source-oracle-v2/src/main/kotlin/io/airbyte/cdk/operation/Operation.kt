@@ -4,6 +4,14 @@
 
 package io.airbyte.cdk.operation
 
+import io.airbyte.cdk.AirbyteConnectorRunner
+import io.airbyte.cdk.integrations.base.AirbyteTraceMessageUtility
+import io.airbyte.cdk.integrations.util.ApmTraceUtils
+import io.airbyte.cdk.integrations.util.ConnectorExceptionUtil
+import io.github.oshai.kotlinlogging.KotlinLogging
+
+private val logger = KotlinLogging.logger {}
+
 const val CONNECTOR_OPERATION: String = "airbyte.connector.operation"
 
 /**
@@ -15,6 +23,26 @@ interface Operation {
     val type: OperationType
 
     fun execute()
+
+    fun executeWithExceptionHandling() {
+        logger.info { "Executing $type operation." }
+        try {
+            execute()
+        } catch (e: Throwable) {
+            // Many of the exceptions thrown are nested inside layers of RuntimeExceptions. An
+            // attempt is made to find the root exception that corresponds to a configuration
+            // error. If that does not exist, we just return the original exception.
+            ApmTraceUtils.addExceptionToTrace(e)
+            val rootThrowable = ConnectorExceptionUtil.getRootConfigError(Exception(e))
+            val displayMessage = ConnectorExceptionUtil.getDisplayMessage(rootThrowable)
+            // If the connector throws a config error, a trace message with the relevant
+            // message should be surfaced.
+            if (ConnectorExceptionUtil.isConfigError(rootThrowable)) {
+                AirbyteTraceMessageUtility.emitConfigErrorTrace(e, displayMessage)
+            }
+            logger.error(e) { "Failed $type operation execution." }
+        }
+    }
 }
 
 /**
@@ -30,4 +58,7 @@ enum class OperationType {
 }
 
 /** Custom exception that represents a failure to execute an operation. */
-class OperationExecutionException(message: String, cause: Throwable) : Exception(message, cause)
+class OperationExecutionException(message: String, cause: Throwable) : Exception(message, cause) {
+    constructor(message: String) : this(message, RuntimeException(message))
+
+}
