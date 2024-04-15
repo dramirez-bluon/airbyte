@@ -12,18 +12,26 @@ import io.airbyte.cdk.command.SourceConnectorConfiguration
 import io.airbyte.cdk.consumers.CatalogValidationFailureHandler
 import io.airbyte.cdk.consumers.OutputConsumer
 import io.airbyte.cdk.jdbc.ColumnMetadata
+import io.airbyte.cdk.jdbc.JdbcConnectionFactory
 import io.airbyte.cdk.jdbc.MetadataQuerier
 import io.airbyte.cdk.jdbc.SelectFrom
 import io.airbyte.cdk.jdbc.SourceOperations
 import io.airbyte.cdk.jdbc.TableName
 import io.airbyte.commons.exceptions.ConfigErrorException
 import io.airbyte.commons.json.Jsons
+import io.airbyte.protocol.models.v0.AirbyteMessage
 import io.airbyte.protocol.models.v0.AirbyteStateMessage
+import io.airbyte.protocol.models.v0.AirbyteStateStats
+import io.airbyte.protocol.models.v0.AirbyteStreamState
 import io.airbyte.protocol.models.v0.CatalogHelpers
 import io.airbyte.protocol.models.v0.ConfiguredAirbyteCatalog
 import io.airbyte.protocol.models.v0.ConfiguredAirbyteStream
+import io.airbyte.protocol.models.v0.StreamDescriptor
 import io.micronaut.context.annotation.Requires
 import jakarta.inject.Singleton
+import java.sql.Connection
+import java.sql.PreparedStatement
+import java.sql.ResultSet
 
 
 @Singleton
@@ -35,6 +43,7 @@ class ReadOperation(
     val stateSupplier: ConnectorInputStateSupplier,
     val sourceOperations: SourceOperations,
     val metadataQuerier: MetadataQuerier,
+    val jdbcConnectionFactory: JdbcConnectionFactory
     val outputConsumer: OutputConsumer,
     val validationHandler: CatalogValidationFailureHandler,
 ) : Operation, AutoCloseable {
@@ -44,6 +53,49 @@ class ReadOperation(
     override fun execute() {
         validateInputState()
         val selectFroms: List<SelectFrom> = collectSelectFroms()
+        for (selectFrom in selectFroms) {
+            val conn: Connection = jdbcConnectionFactory.get()
+            try {
+                conn.isReadOnly = true
+                selectFrom.table.catalog?.let { conn.catalog = it }
+                selectFrom.table.schema?.let { conn.schema = it }
+                val q = sourceOperations.selectFrom(selectFrom)
+                val stmt: PreparedStatement = conn.prepareStatement(q.sql)
+                var rowCount = 0L
+                var cursorValues: List<String> = selectFrom.cursorColumnValues
+                try {
+                    q.params.forEachIndexed { i, v -> stmt.setString(i+1, v) }
+                    val rs: ResultSet = stmt.executeQuery()
+                    while (rs.next()) {
+                        cursorValues = sourceOperations.cursorColumnValues(selectFrom, rs)
+                        val row = sourceOperations.dataColumnValues(selectFrom, rs)
+                        recordConsumer(selectFrom, row)
+                        rowCount++
+                    }
+                    val streamState: JsonNode =
+                        Jsons.jsonNode(selectFrom.cursorColumnNames.zip(cursorValues).toMap())
+                    outputConsumer.accept(AirbyteMessage()
+                        .withType(AirbyteMessage.Type.STATE)
+                        .withState(AirbyteStateMessage()
+                            .withType(AirbyteStateMessage.AirbyteStateType.STREAM)
+                            .withStream(AirbyteStreamState()
+                                .withStreamDescriptor(StreamDescriptor()
+                                    .withName(selectFrom.configuredStream.stream.name)
+                                    .withNamespace(selectFrom.configuredStream.stream.namespace))
+                                .withStreamState(streamState))
+                            .withSourceStats(AirbyteStateStats()
+                                .withRecordCount(rowCount.toDouble()))))
+                } finally {
+                    stmt.close()
+                }
+            } finally {
+                conn.close()
+            }
+        }
+    }
+
+    private fun recordConsumer(selectFrom: SelectFrom, row: List<Any?>) {
+
     }
 
     private fun validateInputState() {
@@ -87,8 +139,7 @@ class ReadOperation(
             }
         }
         val expectedColumnNames: Set<String> = CatalogHelpers.getTopLevelFieldNames(configuredStream)
-        val sql: String = sourceOperations.selectStarFromTableLimit0(table)
-        val dataColumns: List<ColumnMetadata> = metadataQuerier.columnMetadata(table, sql)
+        val dataColumns: List<ColumnMetadata> = metadataQuerier.columnMetadata(table)
             .filter { expectedColumnNames.contains(it.name) }
         for (columnName in expectedColumnNames.toList().sorted()) {
             if (columnName.startsWith("_ab_")) {
@@ -111,7 +162,7 @@ class ReadOperation(
                 continue
             }
         }
-        return SelectFrom(table, dataColumns)
+        return SelectFrom(configuredStream, table, dataColumns, listOf(), listOf(), null)
     }
 
 

@@ -1,5 +1,6 @@
 package io.airbyte.cdk.jdbc
 
+import io.airbyte.protocol.models.v0.ConfiguredAirbyteStream
 import java.sql.JDBCType
 
 
@@ -29,6 +30,10 @@ data class ColumnMetadata(
 )
 
 data class SelectFrom(
+    val configuredStream: ConfiguredAirbyteStream,
     val table: TableName,
     val dataColumns: List<ColumnMetadata>,
+    val cursorColumnNames: List<String>,
+    val cursorColumnValues: List<String>,
+    val limit: Long?
 )

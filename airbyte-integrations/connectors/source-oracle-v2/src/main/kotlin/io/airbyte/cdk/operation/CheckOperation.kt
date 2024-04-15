@@ -98,16 +98,16 @@ class CheckOperation(
         val tableNames: List<TableName> = metadataQuerier.tableNames()
         logger.info { "Discovered ${tableNames.size} table(s)." }
         for (table in tableNames) {
-            val sql: String = sourceOperations.selectStarFromTableLimit0(table)
-            logger.info { "Querying $sql for config check." }
             try {
-                metadataQuerier.columnMetadata(table, sql)
+                metadataQuerier.columnMetadata(table)
             } catch (e: SQLException) {
                 logger.info {
                     "Query failed with code ${e.errorCode}, SQLState ${e.sqlState};" +
                         " will try to query another table instead."
                 }
-                logger.debug(e) { "Config check query $sql failed with exception." }
+                logger.debug(e) {
+                    "Config check column metadata query for $table failed with exception."
+                }
                 continue
             }
             logger.info { "Query successful." }

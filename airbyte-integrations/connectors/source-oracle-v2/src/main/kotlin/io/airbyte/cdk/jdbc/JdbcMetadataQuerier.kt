@@ -64,7 +64,7 @@ private class JdbcMetadataQuerier(
                 logger.info { "Discovered ${meta.columnCount} columns in $table." }
                 return (1..meta.columnCount).map {
                     ColumnMetadata(
-                        name = meta.getColumnName(it),
+                        name = meta.getColumnLabel(it),
                         type = swallow { meta.getColumnType(it) }?.let { JDBCType.valueOf(it) },
                         typeName = swallow { meta.getColumnTypeName(it) },
                         klazz = swallow { meta.getColumnClassName(it) }?.let { Class.forName(it) },
