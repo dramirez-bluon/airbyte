@@ -19,6 +19,9 @@ import java.time.format.DateTimeFormatter
 
 sealed interface ColumnType {
     fun asJsonSchemaType(): JsonSchemaType
+
+    fun asJsonSchema(): JsonNode =
+        Jsons.jsonNode(asJsonSchemaType().jsonSchemaTypeMap)
 }
 
 data class ArrayColumnType(val item: ColumnType) : ColumnType {
@@ -171,3 +174,40 @@ private val timeFormatter: DateTimeFormatter = DateTimeFormatter.ofPattern("HH:m
 private val timeTzFormatter: DateTimeFormatter = DateTimeFormatter.ofPattern("HH:mm:ss.SSSSSSXXX");
 private val timestampFormatter: DateTimeFormatter = DateTimeFormatter.ofPattern("yyyy-MM-dd'T'HH:mm:ss.SSSSSS")
 private val timestampTzFormatter: DateTimeFormatter = DateTimeFormatter.ofPattern("yyyy-MM-dd'T'HH:mm:ss.SSSSSSXXX");
+
+@JvmInline value class CatalogFieldSchema(val jsonSchemaProperties: JsonNode) {
+
+    fun value(key: String): String = jsonSchemaProperties[key]?.asText() ?: ""
+    fun type(): String = value("type")
+    fun format(): String = value("format")
+    fun airbyteType(): String = value("airbyte_type")
+
+    fun asColumnType(): ColumnType = when(type()) {
+        "array" -> ArrayColumnType(CatalogFieldSchema(jsonSchemaProperties["items"]).asColumnType())
+        "null" -> LeafType.NULL
+        "boolean" -> LeafType.BOOLEAN
+        "number" -> when (airbyteType()) {
+            "integer", "big_integer" -> LeafType.INTEGER
+            else -> LeafType.NUMBER
+        }
+        "string" -> when(format()) {
+            "date" -> LeafType.DATE
+            "date-time" -> if (airbyteType() == "timestamp_with_timezone") {
+                LeafType.TIMESTAMP_WITH_TIMEZONE
+            } else {
+                LeafType.TIMESTAMP_WITHOUT_TIMEZONE
+            }
+            "time" -> if (airbyteType() == "time_with_timezone") {
+                LeafType.TIME_WITH_TIMEZONE
+            } else {
+                LeafType.TIME_WITHOUT_TIMEZONE
+            }
+            else -> if (value("contentEncoding") == "base64") {
+                LeafType.BINARY
+            } else {
+                LeafType.STRING
+            }
+        }
+        else -> LeafType.JSONB
+    }
+}

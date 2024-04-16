@@ -5,8 +5,6 @@ import java.sql.ResultSet
 /** Database-specific query builders and type mappers. */
 interface SourceOperations {
 
-    fun selectStarFromTableLimit0(table: TableName): String
-    fun discoverColumnType(c: ColumnMetadata): ColumnType
     fun selectFrom(selectFrom: SelectFrom): SqlQueryWithBindings
     data class SqlQueryWithBindings(val sql: String, val params: List<String>)
 

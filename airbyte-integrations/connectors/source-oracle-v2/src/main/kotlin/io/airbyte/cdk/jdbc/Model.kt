@@ -1,17 +1,7 @@
 package io.airbyte.cdk.jdbc
 
-import com.fasterxml.jackson.databind.JsonNode
-import com.fasterxml.jackson.databind.node.ArrayNode
-import com.fasterxml.jackson.databind.node.JsonNodeFactory
-import io.airbyte.commons.jackson.MoreMappers
-import io.airbyte.commons.json.Jsons
-import io.airbyte.protocol.models.JsonSchemaPrimitiveUtil
-import io.airbyte.protocol.models.JsonSchemaType
 import io.airbyte.protocol.models.v0.StreamDescriptor
 import java.sql.JDBCType
-import java.time.format.DateTimeFormatter
-import java.time.*
-import java.time.chrono.*
 
 
 /** Models a row for [java.sql.DatabaseMetaData.getTables]. */
@@ -25,6 +15,7 @@ data class TableName(
 /** Data class with one field for each [java.sql.ResultSetMetaData] column method. */
 data class ColumnMetadata(
     val name: String,
+    val label: String,
     val type: JDBCType? = null,
     val typeName: String? = null,
     val klazz: Class<*>? = null,

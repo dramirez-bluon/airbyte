@@ -36,10 +36,14 @@ data class OracleSourceConfiguration(
     override val jdbcUrlFmt: String,
     override val jdbcProperties: Map<String, String>,
     val defaultSchema: String,
-    override val schemas: List<String>
+    override val schemas: List<String>,
+    val cursorConfiguration: CursorConfiguration,
 ) : SourceConnectorConfiguration {
 
-    override val expectedStateType = AirbyteStateMessage.AirbyteStateType.STREAM
+    override val expectedStateType = when (cursorConfiguration) {
+        is CdcCursor -> AirbyteStateMessage.AirbyteStateType.GLOBAL
+        else -> AirbyteStateMessage.AirbyteStateType.STREAM
+    }
 }
 
 /** Factory for [OracleSourceConfiguration] using [OracleSourceConfigurationJsonObject]. */
@@ -143,5 +147,6 @@ private fun build(pojo: OracleSourceConfigurationJsonObject): OracleSourceConfig
         jdbcProperties = jdbcProperties,
         defaultSchema = defaultSchema,
         schemas = pojo.schemas.ifEmpty { listOf(defaultSchema) },
+        cursorConfiguration = pojo.getCursorConfigurationValue(),
     )
 }

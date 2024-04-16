@@ -9,7 +9,6 @@ import io.airbyte.cdk.command.SourceConnectorConfiguration
 import io.airbyte.cdk.consumers.OutputConsumer
 import io.airbyte.cdk.integrations.util.ApmTraceUtils
 import io.airbyte.cdk.jdbc.MetadataQuerier
-import io.airbyte.cdk.jdbc.SourceOperations
 import io.airbyte.cdk.jdbc.TableName
 import io.airbyte.protocol.models.v0.AirbyteConnectionStatus
 import io.airbyte.protocol.models.v0.AirbyteErrorTraceMessage
@@ -27,7 +26,6 @@ private val logger = KotlinLogging.logger {}
 @Requires(property = CONNECTOR_OPERATION, value = "check")
 class CheckOperation(
     val configSupplier: ConnectorConfigurationSupplier<SourceConnectorConfiguration>,
-    val sourceOperations: SourceOperations,
     val metadataQuerier: MetadataQuerier,
     val outputConsumer: OutputConsumer,
 ) : Operation, AutoCloseable {

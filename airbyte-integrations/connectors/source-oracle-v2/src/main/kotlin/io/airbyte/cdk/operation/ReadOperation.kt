@@ -12,9 +12,11 @@ import io.airbyte.cdk.command.SourceConnectorConfiguration
 import io.airbyte.cdk.consumers.CatalogValidationFailureHandler
 import io.airbyte.cdk.consumers.OutputConsumer
 import io.airbyte.cdk.jdbc.ArrayColumnType
+import io.airbyte.cdk.jdbc.CatalogFieldSchema
 import io.airbyte.cdk.jdbc.ColumnMetadata
 import io.airbyte.cdk.jdbc.ColumnType
 import io.airbyte.cdk.jdbc.DataColumn
+import io.airbyte.cdk.jdbc.DiscoverMapper
 import io.airbyte.cdk.jdbc.JdbcConnectionFactory
 import io.airbyte.cdk.jdbc.LeafType
 import io.airbyte.cdk.jdbc.MetadataQuerier
@@ -48,8 +50,11 @@ class ReadOperation(
     val configSupplier: ConnectorConfigurationSupplier<SourceConnectorConfiguration>,
     val catalogSupplier: ConfiguredAirbyteCatalogSupplier,
     val stateSupplier: ConnectorInputStateSupplier,
-    val sourceOperations: SourceOperations,
+    //
+    val discoverMapper: DiscoverMapper,
     val metadataQuerier: MetadataQuerier,
+    //
+    val sourceOperations: SourceOperations,
     val jdbcConnectionFactory: JdbcConnectionFactory,
     val outputConsumer: OutputConsumer,
     val validationHandler: CatalogValidationFailureHandler,
@@ -159,7 +164,7 @@ class ReadOperation(
         val dataColumns: List<DataColumn> = columnMetadata
             .filter { expectedColumnNames.contains(it.name) }
             .map {
-                val schema = CatalogColumnSchema(jsonSchemaProperties[it.name])
+                val schema = CatalogFieldSchema(jsonSchemaProperties[it.name])
                 DataColumn(it, schema.asColumnType() )
             }
         for (columnName in expectedColumnNames.toList().sorted()) {
@@ -173,7 +178,7 @@ class ReadOperation(
                 validationHandler.columnNotFound(name, namespace, columnName)
                 continue
             }
-            val discoveredType: ColumnType = sourceOperations.discoverColumnType(column.metadata)
+            val discoveredType: ColumnType = discoverMapper.columnType(column.metadata)
             if (column.type != discoveredType) {
                 validationHandler.columnTypeMismatch(
                     name, namespace, columnName, column.type, discoveredType)
@@ -185,32 +190,7 @@ class ReadOperation(
             .withNamespace(configuredStream.stream.namespace)
         return SelectFrom(streamDescriptor, table, dataColumns, listOf(), null)
     }
-
-
-    @JvmInline private value class CatalogColumnSchema(val json: JsonNode) {
-        fun value(key: String): String = json[key]?.asText() ?: ""
-        fun type(): String = value("type")
-        fun format(): String = value("format")
-        fun airbyteType(): String = value("airbyte_type")
-
-        fun asColumnType(): ColumnType = when(type()) {
-            "array" -> ArrayColumnType(CatalogColumnSchema(json["items"]).asColumnType())
-            "null" -> LeafType.NULL
-            "boolean" -> LeafType.BOOLEAN
-            "number" -> when (airbyteType()) {
-                "integer", "big_integer" -> LeafType.INTEGER
-                else -> LeafType.NUMBER
-            }
-            "string" -> when(format()) {
-                "date" -> LeafType.DATE
-                "date-time" -> if (airbyteType() == "timestamp_with_timezone") LeafType.TIMESTAMP_WITH_TIMEZONE else LeafType.TIMESTAMP_WITHOUT_TIMEZONE
-                "time" -> if (airbyteType() == "time_with_timezone") LeafType.TIME_WITH_TIMEZONE else LeafType.TIME_WITHOUT_TIMEZONE
-                else -> if (value("contentEncoding") == "base64") LeafType.BINARY else LeafType.STRING
-            }
-            else -> LeafType.JSONB
-        }
-    }
-
+    
 
     override fun close() {
         metadataQuerier.close()

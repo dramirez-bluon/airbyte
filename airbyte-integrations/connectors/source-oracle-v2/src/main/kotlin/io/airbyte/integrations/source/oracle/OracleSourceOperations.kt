@@ -19,10 +19,6 @@ import java.sql.JDBCType
 @Singleton
 class OracleSourceOperations : SourceOperations {
 
-    override fun selectStarFromTableLimit0(table: TableName) =
-        // Oracle doesn't do LIMIT, instead we need to involve ROWNUM.
-        "SELECT * FROM ${toFullyQualifiedName(table)} WHERE ROWNUM < 1"
-
     override fun selectFrom(selectFrom: SelectFrom): SourceOperations.SqlQueryWithBindings {
         val allColumnNames: List<String> =
             selectFrom.cursorColumns.map { it.name } +
@@ -60,35 +56,4 @@ class OracleSourceOperations : SourceOperations {
         return whereClause to allBindings
     }
 
-    override fun discoverColumnType(c: ColumnMetadata): ColumnType =
-        // This is underspecified and almost certainly incorrect! TODO.
-        when (c.type) {
-            JDBCType.BIT,
-            JDBCType.BOOLEAN -> LeafType.BOOLEAN
-            JDBCType.TINYINT,
-            JDBCType.SMALLINT,
-            JDBCType.INTEGER,
-            JDBCType.BIGINT -> LeafType.INTEGER
-            JDBCType.FLOAT,
-            JDBCType.DOUBLE,
-            JDBCType.REAL,
-            JDBCType.NUMERIC,
-            JDBCType.DECIMAL -> LeafType.NUMBER
-            JDBCType.CHAR,
-            JDBCType.NCHAR,
-            JDBCType.NVARCHAR,
-            JDBCType.VARCHAR,
-            JDBCType.LONGVARCHAR -> LeafType.STRING
-            JDBCType.DATE -> LeafType.DATE
-            JDBCType.TIME -> LeafType.TIME_WITHOUT_TIMEZONE
-            JDBCType.TIMESTAMP -> LeafType.TIMESTAMP_WITHOUT_TIMEZONE
-            JDBCType.TIME_WITH_TIMEZONE -> LeafType.TIME_WITH_TIMEZONE
-            JDBCType.TIMESTAMP_WITH_TIMEZONE -> LeafType.TIMESTAMP_WITH_TIMEZONE
-            JDBCType.BLOB,
-            JDBCType.BINARY,
-            JDBCType.VARBINARY,
-            JDBCType.LONGVARBINARY -> LeafType.BINARY
-            JDBCType.ARRAY -> LeafType.STRING
-            else -> LeafType.STRING
-        }
 }
