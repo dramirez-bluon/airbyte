@@ -29,7 +29,7 @@ data class ColumnMetadata(
     val precision: Int? = null,
     val scale: Int? = null,
 )
-
+/*
 data class SelectFrom(
     val streamDescriptor: StreamDescriptor,
     val table: TableName,
@@ -51,3 +51,4 @@ data class CursorColumn(
     override val type: ColumnType,
     val initialValue: String?,
 ) : Column
+*/

@@ -16,7 +16,7 @@ private val logger = KotlinLogging.logger {}
 /** Default implementation of [MetadataQuerier]. */
 @Prototype
 private class JdbcMetadataQuerier(
-    val sourceOperations: SourceOperations,
+    val discoverMapper: DiscoverMapper,
     val configSupplier: ConnectorConfigurationSupplier<SourceConnectorConfiguration>,
     val jdbcConnectionFactory: JdbcConnectionFactory
 ) : MetadataQuerier {
@@ -53,7 +53,7 @@ private class JdbcMetadataQuerier(
     }
 
     override fun columnMetadata(table: TableName): List<ColumnMetadata> {
-        val sql: String = sourceOperations.selectStarFromTableLimit0(table)
+        val sql: String = discoverMapper.selectStarFromTableLimit0(table)
         logger.info { "Querying $sql for catalog discovery." }
         try {
             table.catalog?.let { conn.catalog = it }

@@ -13,8 +13,10 @@ import com.networknt.schema.SchemaValidatorsConfig
 import com.networknt.schema.SpecVersion
 import io.airbyte.commons.exceptions.ConfigErrorException
 import io.airbyte.commons.jackson.MoreMappers
+import io.airbyte.protocol.models.v0.AirbyteGlobalState
 import io.airbyte.protocol.models.v0.AirbyteStateMessage
 import io.airbyte.protocol.models.v0.AirbyteStream
+import io.airbyte.protocol.models.v0.AirbyteStreamNameNamespacePair
 import io.airbyte.protocol.models.v0.ConfiguredAirbyteCatalog
 import io.github.oshai.kotlinlogging.KotlinLogging
 import io.micronaut.context.annotation.ConfigurationProperties
@@ -72,11 +74,11 @@ private class ConnectorInputStateSupplierImpl : ConnectorInputStateSupplier {
 
     var json: String = "[]"
 
-    val value: List<AirbyteStateMessage> by lazy {
+    val value: InputState by lazy {
         val list: List<AirbyteStateMessage> =
             JsonUtils.parseList(AirbyteStateMessage::class.java, json)
         if (list.isEmpty()) {
-            return@lazy listOf<AirbyteStateMessage>()
+            return@lazy EmptyInputState
         }
         val type: AirbyteStateMessage.AirbyteStateType = list.first().type
         val isGlobal: Boolean =
@@ -88,27 +90,41 @@ private class ConnectorInputStateSupplierImpl : ConnectorInputStateSupplier {
         val filtered: List<AirbyteStateMessage> = list.filter { it.type == type }
         if (filtered.size < list.size) {
             val n = list.size - filtered.size
-            logger.warn { "discarded $n state message(s) not of type $type" }
+            logger.warn { "Discarded $n state message(s) not of type $type." }
         }
         if (isGlobal) {
             if (filtered.size > 1) {
-                logger.warn { "discarded all but last global state message" }
+                logger.warn { "Discarded all but last global state message." }
             }
-            return@lazy listOf(filtered.last())
+            val global: AirbyteGlobalState = filtered.first().global
+            return@lazy GlobalInputState(
+                GlobalStateValue(global.sharedState),
+                global.streamStates.associate {
+                    AirbyteStreamNameNamespacePair(
+                        it.streamDescriptor.name,
+                        it.streamDescriptor.namespace
+                    ) to StreamStateValue(it.streamState)
+                }
+            )
         }
-        val lastOfEachStream: List<AirbyteStateMessage> =
+        val lastOfEachStream: Map<AirbyteStreamNameNamespacePair, StreamStateValue> =
             filtered
-                .groupingBy { it.stream.streamDescriptor }
+                .map { it.stream }
+                .groupingBy {
+                    AirbyteStreamNameNamespacePair(
+                        it.streamDescriptor.name,
+                        it.streamDescriptor.namespace
+                    )
+                }
                 .reduce { _, _, msg -> msg }
-                .values
-                .toList()
+                .mapValues { StreamStateValue(it.value.streamState) }
         if (lastOfEachStream.size < filtered.size) {
-            logger.warn { "discarded all but last stream state message for each stream descriptor" }
+            logger.warn { "Discarded all but last stream state for each stream descriptor." }
         }
-        return@lazy lastOfEachStream
+        return@lazy StreamInputState(lastOfEachStream)
     }
 
-    override fun get(): List<AirbyteStateMessage> = value
+    override fun get(): InputState = value
 }
 
 

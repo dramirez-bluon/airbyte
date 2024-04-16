@@ -8,20 +8,21 @@ import com.fasterxml.jackson.databind.JsonNode
 import io.airbyte.cdk.command.ConfiguredAirbyteCatalogSupplier
 import io.airbyte.cdk.command.ConnectorConfigurationSupplier
 import io.airbyte.cdk.command.ConnectorInputStateSupplier
+import io.airbyte.cdk.command.GlobalInputState
+import io.airbyte.cdk.command.GlobalStateValue
+import io.airbyte.cdk.command.InputState
 import io.airbyte.cdk.command.SourceConnectorConfiguration
+import io.airbyte.cdk.command.StreamInputState
+import io.airbyte.cdk.command.StreamStateValue
 import io.airbyte.cdk.consumers.CatalogValidationFailureHandler
 import io.airbyte.cdk.consumers.OutputConsumer
-import io.airbyte.cdk.jdbc.ArrayColumnType
 import io.airbyte.cdk.jdbc.CatalogFieldSchema
 import io.airbyte.cdk.jdbc.ColumnMetadata
 import io.airbyte.cdk.jdbc.ColumnType
-import io.airbyte.cdk.jdbc.DataColumn
 import io.airbyte.cdk.jdbc.DiscoverMapper
 import io.airbyte.cdk.jdbc.JdbcConnectionFactory
-import io.airbyte.cdk.jdbc.LeafType
 import io.airbyte.cdk.jdbc.MetadataQuerier
 import io.airbyte.cdk.jdbc.RowToRecordData
-import io.airbyte.cdk.jdbc.SelectFrom
 import io.airbyte.cdk.jdbc.SourceOperations
 import io.airbyte.cdk.jdbc.TableName
 import io.airbyte.commons.exceptions.ConfigErrorException
@@ -30,11 +31,12 @@ import io.airbyte.protocol.models.v0.AirbyteMessage
 import io.airbyte.protocol.models.v0.AirbyteRecordMessage
 import io.airbyte.protocol.models.v0.AirbyteStateMessage
 import io.airbyte.protocol.models.v0.AirbyteStateStats
+import io.airbyte.protocol.models.v0.AirbyteStream
+import io.airbyte.protocol.models.v0.AirbyteStreamNameNamespacePair
 import io.airbyte.protocol.models.v0.AirbyteStreamState
 import io.airbyte.protocol.models.v0.CatalogHelpers
 import io.airbyte.protocol.models.v0.ConfiguredAirbyteCatalog
 import io.airbyte.protocol.models.v0.ConfiguredAirbyteStream
-import io.airbyte.protocol.models.v0.StreamDescriptor
 import io.micronaut.context.annotation.Requires
 import jakarta.inject.Singleton
 import java.sql.Connection
@@ -63,8 +65,7 @@ class ReadOperation(
     override val type = OperationType.READ
 
     override fun execute() {
-        validateInputState()
-        val selectFroms: List<SelectFrom> = collectSelectFroms()
+        val selectFroms: List<SelectFrom> = collectSpecs()
         val emittedAt = Instant.now()
         for (selectFrom in selectFroms) {
             val rowToRecordData = RowToRecordData(sourceOperations, selectFrom)
@@ -117,31 +118,48 @@ class ReadOperation(
         }
     }
 
-    private fun validateInputState() {
+    private fun collectSpecs(): ReadFutureSpecs {
         val config: SourceConnectorConfiguration = configSupplier.get()
-        val inputState: List<AirbyteStateMessage> = stateSupplier.get()
-        if (inputState.isEmpty()) {
-            return
+        val configuredCatalog: ConfiguredAirbyteCatalog = catalogSupplier.get()
+        val inputState: InputState = stateSupplier.get()
+        when (inputState) {
+            is GlobalInputState ->
+                if (config.expectedStateType != AirbyteStateMessage.AirbyteStateType.GLOBAL) {
+                    throw ConfigErrorException(
+                        "Input state is GLOBAL but config requires ${config.expectedStateType}"
+                    )
+                }
+            is StreamInputState ->
+                if (config.expectedStateType != AirbyteStateMessage.AirbyteStateType.STREAM) {
+                    throw ConfigErrorException(
+                        "Input state is STREAM but config requires ${config.expectedStateType}"
+                    )
+                }
+            else -> Unit
         }
-        val actualType: AirbyteStateMessage.AirbyteStateType = inputState.first().type
-        if (config.expectedStateType != actualType) {
-            throw ConfigErrorException(
-                "Provided state of type $actualType is incompatible with connector " +
-                    "configuration requirements for state type ${config.expectedStateType} " +
-                    "for READ operation."
+        val tableNames: List<TableName> = metadataQuerier.tableNames()
+        val streamReadFutureSpecs: List<StreamReadFutureSpec> = configuredCatalog.streams
+            .mapNotNull { configuredStream: ConfiguredAirbyteStream ->
+                toStreamSpec(configuredStream.stream, tableNames)?.let {
+                    val state = inputState.getStateValue(it.stream.name, it.stream.namespace)
+                    toStreamReadFutureSpec(configuredStream, it, state)
+                }
+            }
+        if (config.expectedStateType == AirbyteStateMessage.AirbyteStateType.GLOBAL) {
+            val globalReadFutureSpec = GlobalReadFutureSpec(
+                if (inputState is GlobalInputState) inputState.global else GlobalStateValue(null),
+                streamReadFutureSpecs.map { it.streamSpec }
+            )
+            return ReadFutureSpecs(
+                globalReadFutureSpec,
+                streamReadFutureSpecs,
             )
         }
+        return ReadFutureSpecs(null, streamReadFutureSpecs)
     }
 
-    private fun collectSelectFroms(): List<SelectFrom> {
-        val configuredCatalog: ConfiguredAirbyteCatalog = catalogSupplier.get()
-        val tableNames: List<TableName> = metadataQuerier.tableNames()
-        return configuredCatalog.streams.mapNotNull { toSelectFrom(it, tableNames) }
-    }
-
-    private fun toSelectFrom(configuredStream: ConfiguredAirbyteStream, tableNames: List<TableName>): SelectFrom? {
-        val stream = configuredStream.stream
-        val jsonSchemaProperties: JsonNode = configuredStream.stream.jsonSchema["properties"]
+    private fun toStreamSpec(stream: AirbyteStream, tableNames: List<TableName>): StreamSpec? {
+        val jsonSchemaProperties: JsonNode = stream.jsonSchema["properties"]
         val name: String = stream.name!!
         val namespace: String? = stream.namespace
         val matchingTables: List<TableName> = tableNames
@@ -158,41 +176,115 @@ class ReadOperation(
                 return null
             }
         }
-        val expectedColumnNames: Set<String> =
-            CatalogHelpers.getTopLevelFieldNames(configuredStream)
+        val expectedColumnLabels: Set<String> =
+            jsonSchemaProperties.fieldNames().asSequence().toSet()
         val columnMetadata: List<ColumnMetadata> = metadataQuerier.columnMetadata(table)
-        val dataColumns: List<DataColumn> = columnMetadata
-            .filter { expectedColumnNames.contains(it.name) }
-            .map {
-                val schema = CatalogFieldSchema(jsonSchemaProperties[it.name])
-                DataColumn(it, schema.asColumnType() )
-            }
-        for (columnName in expectedColumnNames.toList().sorted()) {
-            if (columnName.startsWith("_ab_")) {
+        val allDataColumns: Map<String, DataColumn> = columnMetadata.associate {
+            val schema = CatalogFieldSchema(jsonSchemaProperties[it.name])
+            it.label to DataColumn(it, schema.asColumnType())
+        }
+        for (columnLabel in expectedColumnLabels.toList().sorted()) {
+            if (columnLabel.startsWith("_ab_")) {
                 // Ignore airbyte metadata columns.
                 // These aren't actually present in the table.
                 continue
             }
-            val column: DataColumn? = dataColumns.find { it.metadata.name == columnName }
+            val column: DataColumn? = allDataColumns[columnLabel]
             if (column == null) {
-                validationHandler.columnNotFound(name, namespace, columnName)
+                validationHandler.columnNotFound(name, namespace, columnLabel)
                 continue
             }
             val discoveredType: ColumnType = discoverMapper.columnType(column.metadata)
             if (column.type != discoveredType) {
                 validationHandler.columnTypeMismatch(
-                    name, namespace, columnName, column.type, discoveredType)
+                    name, namespace, columnLabel, column.type, discoveredType)
                 continue
             }
         }
-        val streamDescriptor = StreamDescriptor()
-            .withName(configuredStream.stream.name)
-            .withNamespace(configuredStream.stream.namespace)
-        return SelectFrom(streamDescriptor, table, dataColumns, listOf(), null)
+        val streamDataColumns: List<DataColumn> = allDataColumns
+            .filterKeys { expectedColumnLabels.contains(it) }
+            .values.toList()
+        val primaryKeyCandidates: List<List<DataColumn>> = stream.sourceDefinedPrimaryKey
+            .map { primaryKeyColumnLabels: List<String> ->
+                primaryKeyColumnLabels.map {
+                    allDataColumns[it].apply {
+                        if (this == null) {
+                            validationHandler.columnNotFound(name, namespace, it)
+                        }
+                    }
+                }
+            }
+            .filter { it.filterNotNull().size == it.size && it.isNotEmpty() }
+            .map { it.filterNotNull() }
+        val cursorCandidates: List<CursorColumn> = stream.defaultCursorField.mapNotNull {
+            val jsonSchema: JsonNode? = jsonSchemaProperties[it]
+            if (jsonSchema == null) {
+                validationHandler.columnNotFound(name, namespace, it)
+                null
+            } else {
+                CursorColumn(it, CatalogFieldSchema(jsonSchema).asColumnType())
+            }
+        }
+        return StreamSpec(stream, table, streamDataColumns, primaryKeyCandidates, cursorCandidates)
     }
-    
+
+    private fun toStreamReadFutureSpec(
+        configuredStream: ConfiguredAirbyteStream,
+        streamSpec: StreamSpec,
+        inputStateValue: StreamStateValue,
+    ): StreamReadFutureSpec {
+        TODO()
+        return StreamReadFutureSpec(
+            streamSpec,
+            listOf(),
+            null,
+            inputStateValue,
+        )
+    }
 
     override fun close() {
         metadataQuerier.close()
     }
 }
+
+
+data class ReadFutureSpecs(
+    val global: GlobalReadFutureSpec?,
+    val streams: List<StreamReadFutureSpec>
+) {
+    fun toSpecList(): List<ReadFutureSpec> = listOfNotNull(global) + streams
+}
+
+sealed interface ReadFutureSpec
+
+data class GlobalReadFutureSpec(
+    val global: GlobalStateValue,
+    val streamSpecs: List<StreamSpec>
+) : ReadFutureSpec
+
+data class StreamReadFutureSpec(
+    val streamSpec: StreamSpec,
+    val primaryKey: List<DataColumn>?,
+    val cursor: CursorColumn?,
+    val initialState: StreamStateValue
+) : ReadFutureSpec
+
+data class StreamSpec(
+    val stream: AirbyteStream,
+    val table: TableName,
+    val dataColumns: List<DataColumn>,
+    val primaryKeyCandidates: List<List<DataColumn>>,
+    val cursorColumnCandidates: List<CursorColumn>
+)
+
+sealed interface Column {
+    val type: ColumnType
+}
+data class DataColumn(
+    val metadata: ColumnMetadata,
+    override val type: ColumnType
+) : Column
+data class CursorColumn(
+    val label: String,
+    override val type: ColumnType,
+) : Column

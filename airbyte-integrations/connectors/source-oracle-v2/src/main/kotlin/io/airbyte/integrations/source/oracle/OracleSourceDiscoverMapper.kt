@@ -101,10 +101,6 @@ class OracleSourceDiscoverMapper(
                     defaultCursorField = listOf("_ab_cdc_lsn")
                     sourceDefinedCursor = true
                 }
-                RowidCursor -> {
-                    defaultCursorField = listOf("ROWID")
-                    sourceDefinedCursor = true
-                }
                 UserDefinedCursor -> {
                     if (defaultCursorField.isEmpty()) {
                         supportedSyncModes = listOf(SyncMode.FULL_REFRESH)

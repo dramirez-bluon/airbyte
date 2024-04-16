@@ -4,6 +4,7 @@ import com.fasterxml.jackson.databind.JsonNode
 import io.airbyte.cdk.ssh.SshConnectionOptions
 import io.airbyte.cdk.ssh.SshTunnelMethodConfiguration
 import io.airbyte.protocol.models.v0.AirbyteStateMessage
+import io.airbyte.protocol.models.v0.AirbyteStreamNameNamespacePair
 import io.airbyte.protocol.models.v0.ConfiguredAirbyteCatalog
 import java.util.function.Supplier
 
@@ -62,4 +63,31 @@ interface ConnectorConfigurationSupplier<T : ConnectorConfiguration> : Supplier<
 
 interface ConfiguredAirbyteCatalogSupplier : Supplier<ConfiguredAirbyteCatalog>
 
-interface ConnectorInputStateSupplier : Supplier<List<AirbyteStateMessage>>
+@JvmInline value class GlobalStateValue(val wrapped: JsonNode?) {
+
+}
+
+@JvmInline value class StreamStateValue(val wrapped: JsonNode?) {
+
+}
+
+sealed interface InputState {
+    val stream: Map<AirbyteStreamNameNamespacePair, StreamStateValue>
+    fun getStateValue(name: String, namespace: String?): StreamStateValue =
+        stream[AirbyteStreamNameNamespacePair(name, namespace)] ?: StreamStateValue(null)
+}
+
+data object EmptyInputState : InputState {
+    override val stream: Map<AirbyteStreamNameNamespacePair, StreamStateValue> = mapOf()
+}
+
+data class GlobalInputState(
+    val global: GlobalStateValue,
+    override val stream: Map<AirbyteStreamNameNamespacePair, StreamStateValue>
+) : InputState
+
+data class StreamInputState(
+    override val stream: Map<AirbyteStreamNameNamespacePair, StreamStateValue>
+) : InputState
+
+interface ConnectorInputStateSupplier : Supplier<InputState>

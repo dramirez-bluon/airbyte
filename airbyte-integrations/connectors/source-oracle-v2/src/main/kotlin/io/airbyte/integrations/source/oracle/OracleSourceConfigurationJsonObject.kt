@@ -289,7 +289,6 @@ class MicronautPropertiesFriendlyEncryption {
 @JsonTypeInfo(use = JsonTypeInfo.Id.NAME, property = "cursor_method")
 @JsonSubTypes(
     JsonSubTypes.Type(value = UserDefinedCursor::class, name = "user_defined"),
-    JsonSubTypes.Type(value = RowidCursor::class, name = "rowid"),
     JsonSubTypes.Type(value = CdcCursor::class, name = "cdc"),
 )
 @JsonSchemaTitle("Update Method")
@@ -302,10 +301,6 @@ sealed interface CursorConfiguration
     "#user-defined-cursor\">cursor column</a> chosen when configuring a connection " +
     "(e.g. created_at, updated_at).")
 data object UserDefinedCursor : CursorConfiguration
-
-@JsonSchemaTitle("Scan Changes with ROWID")
-@JsonSchemaDescription("Incrementally detects new inserts and updates using Oracle's ROWID column.")
-data object RowidCursor : CursorConfiguration
 
 @JsonSchemaTitle("Read Changes using Change Data Capture (CDC)")
 @JsonSchemaDescription("<i>Recommended</i> - " +
@@ -322,7 +317,6 @@ class MicronautPropertiesFriendlyCursorConfiguration {
     fun asCursorConfiguration(): CursorConfiguration =
         when (cursorMethod) {
             "user_defined" -> UserDefinedCursor
-            "rowid" -> RowidCursor
             "cdc" -> CdcCursor
             else -> throw ConfigErrorException("invalid value $cursorMethod")
         }
