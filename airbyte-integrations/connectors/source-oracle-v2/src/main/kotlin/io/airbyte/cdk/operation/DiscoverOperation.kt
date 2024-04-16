@@ -4,8 +4,11 @@
 
 package io.airbyte.cdk.operation
 
+import io.airbyte.cdk.command.ConnectorConfigurationSupplier
+import io.airbyte.cdk.command.SourceConnectorConfiguration
 import io.airbyte.cdk.consumers.OutputConsumer
 import io.airbyte.cdk.jdbc.ColumnMetadata
+import io.airbyte.cdk.jdbc.ColumnType
 import io.airbyte.cdk.jdbc.MetadataQuerier
 import io.airbyte.cdk.jdbc.SourceOperations
 import io.airbyte.cdk.jdbc.TableName
@@ -13,7 +16,6 @@ import io.airbyte.protocol.models.Field
 import io.airbyte.protocol.models.v0.AirbyteCatalog
 import io.airbyte.protocol.models.v0.AirbyteMessage
 import io.airbyte.protocol.models.v0.AirbyteStream
-import io.airbyte.protocol.models.v0.AirbyteStreamNameNamespacePair
 import io.airbyte.protocol.models.v0.CatalogHelpers
 import io.github.oshai.kotlinlogging.KotlinLogging
 import io.micronaut.context.annotation.Requires
@@ -38,8 +40,8 @@ class DiscoverOperation(
             .map {
                 // TODO flesh out the catalog with fake CDC columns, etc.
                 CatalogHelpers.createAirbyteStream(
-                    it.fullyQualifiedName.name,
-                    it.fullyQualifiedName.namespace,
+                    it.name,
+                    it.namespace,
                     it.fields
                 )
                     .withSourceDefinedPrimaryKey(it.primaryKeys)
@@ -60,15 +62,21 @@ class DiscoverOperation(
             logger.info { "Skipping empty table $table." }
             return null
         }
+        val primaryKeys: List<List<String>> = metadataQuerier.primaryKeys(table)
+        val fields: List<Field> = columnMetadata.map { c: ColumnMetadata ->
+            Field.of(c.name, sourceOperations.discoverColumnType(c).asJsonSchemaType())
+        }
         return DiscoveredStream(
-            AirbyteStreamNameNamespacePair(table.name, table.schema ?: table.catalog!!),
-            columnMetadata.map { Field.of(it.name, sourceOperations.toAirbyteType(it)) },
-            metadataQuerier.primaryKeys(table),
+            table.name,
+            table.schema ?: table.catalog,
+            fields,
+            primaryKeys,
         )
     }
 
     data class DiscoveredStream(
-        val fullyQualifiedName: AirbyteStreamNameNamespacePair,
+        val name: String,
+        val namespace: String?,
         val fields: List<Field>,
         val primaryKeys: List<List<String>>,
     )

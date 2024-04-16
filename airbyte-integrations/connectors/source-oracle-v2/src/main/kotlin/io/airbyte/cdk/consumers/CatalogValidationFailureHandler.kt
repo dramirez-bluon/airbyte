@@ -1,6 +1,7 @@
 package io.airbyte.cdk.consumers
 
 import com.fasterxml.jackson.databind.JsonNode
+import io.airbyte.cdk.jdbc.ColumnType
 import io.airbyte.cdk.jdbc.TableName
 import io.github.oshai.kotlinlogging.KotlinLogging
 import jakarta.inject.Singleton
@@ -16,7 +17,7 @@ interface CatalogValidationFailureHandler {
 
     fun columnNotFound(streamName: String, streamNamespace: String?, columnName: String)
 
-    fun columnTypeMismatch(streamName: String, streamNamespace: String?, columnName: String, expected: JsonNode, actual: JsonNode)
+    fun columnTypeMismatch(streamName: String, streamNamespace: String?, columnName: String, expected: ColumnType, actual: ColumnType)
 }
 
 @Singleton
@@ -50,8 +51,8 @@ class LoggingCatalogValidationFailureHandler : CatalogValidationFailureHandler {
         streamName: String,
         streamNamespace: String?,
         columnName: String,
-        expected: JsonNode,
-        actual: JsonNode
+        expected: ColumnType,
+        actual: ColumnType
     ) {
         logger.warn {
             "In table '$streamName' in ${inNamespace(streamNamespace)}: " +

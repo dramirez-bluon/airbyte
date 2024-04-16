@@ -1,7 +1,17 @@
 package io.airbyte.cdk.jdbc
 
-import io.airbyte.protocol.models.v0.ConfiguredAirbyteStream
+import com.fasterxml.jackson.databind.JsonNode
+import com.fasterxml.jackson.databind.node.ArrayNode
+import com.fasterxml.jackson.databind.node.JsonNodeFactory
+import io.airbyte.commons.jackson.MoreMappers
+import io.airbyte.commons.json.Jsons
+import io.airbyte.protocol.models.JsonSchemaPrimitiveUtil
+import io.airbyte.protocol.models.JsonSchemaType
+import io.airbyte.protocol.models.v0.StreamDescriptor
 import java.sql.JDBCType
+import java.time.format.DateTimeFormatter
+import java.time.*
+import java.time.chrono.*
 
 
 /** Models a row for [java.sql.DatabaseMetaData.getTables]. */
@@ -30,10 +40,23 @@ data class ColumnMetadata(
 )
 
 data class SelectFrom(
-    val configuredStream: ConfiguredAirbyteStream,
+    val streamDescriptor: StreamDescriptor,
     val table: TableName,
-    val dataColumns: List<ColumnMetadata>,
-    val cursorColumnNames: List<String>,
-    val cursorColumnValues: List<String>,
+    val dataColumns: List<DataColumn>,
+    val cursorColumns: List<CursorColumn>,
     val limit: Long?
 )
+
+sealed interface Column {
+    val type: ColumnType
+}
+data class DataColumn(
+    val metadata: ColumnMetadata,
+    override val type: ColumnType
+) : Column
+
+data class CursorColumn(
+    val name: String,
+    override val type: ColumnType,
+    val initialValue: String?,
+) : Column

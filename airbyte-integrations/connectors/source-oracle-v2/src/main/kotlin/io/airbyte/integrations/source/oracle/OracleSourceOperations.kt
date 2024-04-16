@@ -5,10 +5,11 @@
 package io.airbyte.integrations.source.oracle
 
 import io.airbyte.cdk.jdbc.ColumnMetadata
+import io.airbyte.cdk.jdbc.ColumnType
+import io.airbyte.cdk.jdbc.LeafType
 import io.airbyte.cdk.jdbc.SelectFrom
 import io.airbyte.cdk.jdbc.SourceOperations
 import io.airbyte.cdk.jdbc.TableName
-import io.airbyte.protocol.models.JsonSchemaType
 import jakarta.inject.Singleton
 import java.sql.JDBCType
 
@@ -23,64 +24,71 @@ class OracleSourceOperations : SourceOperations {
         "SELECT * FROM ${toFullyQualifiedName(table)} WHERE ROWNUM < 1"
 
     override fun selectFrom(selectFrom: SelectFrom): SourceOperations.SqlQueryWithBindings {
-        val cursors: List<String> = selectFrom.cursorColumnNames
-        val dataColumnNames: List<String> = selectFrom.dataColumns.map(::toColumnInSelect)
-        val allColumnNames: String = (cursors + dataColumnNames)
-            .joinToString(separator = ", ")
-        val cursorClause: String? = cursors
-            .mapIndexed { i, v -> cursors.take(i).map { "$it = ?" } + "$v > ?" }
-            .map { it.joinToString(separator = " AND ", prefix =  "(", postfix = ")") }
-            .takeIf { it.isNotEmpty() }
-            ?.joinToString(separator = " OR ", prefix = "(", postfix = ")")
-        val limitClause: String? = selectFrom.limit?.let { "ROWNUM < ?" }
-        val whereClause: String? = listOfNotNull(cursorClause, limitClause)
-            .takeIf { it.isNotEmpty() }
-            ?.joinToString(separator = " AND ")
-        val orderBy: String? = (1..cursors.size).toList()
+        val allColumnNames: List<String> =
+            selectFrom.cursorColumns.map { it.name } +
+                selectFrom.dataColumns.map { toColumnInSelect(it.metadata) }
+        val orderBy: String? = (1..selectFrom.cursorColumns.size).toList()
             .takeIf { it.isNotEmpty() }
             ?.joinToString(separator = ", ") { "$it" }
+        val (whereClause: String?, allBindings: List<String>) = whereClauseAndBindings(selectFrom)
         val sql: String = listOfNotNull(
-            "SELECT $allColumnNames",
+            "SELECT ${allColumnNames.joinToString(separator = ", ")}",
             "FROM ${toFullyQualifiedName(selectFrom.table)}",
             whereClause?.let { " WHERE $it" },
             orderBy?.let { " ORDER BY $it" }
         ).joinToString(separator = " ")
-        val cursorBindings: List<String> = selectFrom.cursorColumnValues
-            .flatMapIndexed { i, _ -> selectFrom.cursorColumnValues.take(i+1) }
-        val limitBindings: List<String> = listOfNotNull(selectFrom.limit?.toString())
-        val allBindings: List<String> = cursorBindings + limitBindings
         return SourceOperations.SqlQueryWithBindings(sql, allBindings)
     }
 
-    override fun toAirbyteType(c: ColumnMetadata): JsonSchemaType =
+    private fun whereClauseAndBindings(selectFrom: SelectFrom): Pair<String?, List<String>> {
+        val limitClause: String? = selectFrom.limit?.let { "ROWNUM < ?" }
+        val limitBindings: List<String> = listOfNotNull(selectFrom.limit?.toString())
+        val cursorValues: List<String> = selectFrom.cursorColumns.mapNotNull { it.initialValue }
+        if (cursorValues.isEmpty()) {
+            return limitClause to limitBindings
+        }
+        val cursorNames: List<String> = selectFrom.cursorColumns.map { it.name }
+        val cursorClause: String = cursorNames
+            .mapIndexed { i, v -> cursorNames.take(i).map { "$it = ?" } + "$v > ?" }
+            .map { it.joinToString(separator = " AND ", prefix =  "(", postfix = ")") }
+            .joinToString(separator = " OR ", prefix = "(", postfix = ")")
+        val cursorBindings: List<String> = cursorValues
+            .flatMapIndexed { i, _ -> cursorValues.take(i+1) }
+        val whereClause: String = listOfNotNull(cursorClause, limitClause)
+            .joinToString(separator = " AND ")
+        val allBindings: List<String> = cursorBindings + limitBindings
+        return whereClause to allBindings
+    }
+
+    override fun discoverColumnType(c: ColumnMetadata): ColumnType =
         // This is underspecified and almost certainly incorrect! TODO.
         when (c.type) {
             JDBCType.BIT,
-            JDBCType.BOOLEAN -> JsonSchemaType.BOOLEAN
+            JDBCType.BOOLEAN -> LeafType.BOOLEAN
             JDBCType.TINYINT,
-            JDBCType.SMALLINT -> JsonSchemaType.INTEGER
-            JDBCType.INTEGER -> JsonSchemaType.INTEGER
-            JDBCType.BIGINT -> JsonSchemaType.INTEGER
+            JDBCType.SMALLINT,
+            JDBCType.INTEGER,
+            JDBCType.BIGINT -> LeafType.INTEGER
             JDBCType.FLOAT,
-            JDBCType.DOUBLE -> JsonSchemaType.NUMBER
-            JDBCType.REAL -> JsonSchemaType.NUMBER
+            JDBCType.DOUBLE,
+            JDBCType.REAL,
             JDBCType.NUMERIC,
-            JDBCType.DECIMAL -> JsonSchemaType.NUMBER
+            JDBCType.DECIMAL -> LeafType.NUMBER
             JDBCType.CHAR,
             JDBCType.NCHAR,
             JDBCType.NVARCHAR,
             JDBCType.VARCHAR,
-            JDBCType.LONGVARCHAR -> JsonSchemaType.STRING
-            JDBCType.DATE -> JsonSchemaType.STRING_DATE
-            JDBCType.TIME -> JsonSchemaType.STRING_TIME_WITHOUT_TIMEZONE
-            JDBCType.TIMESTAMP -> JsonSchemaType.STRING_TIMESTAMP_WITHOUT_TIMEZONE
-            JDBCType.TIME_WITH_TIMEZONE -> JsonSchemaType.STRING_TIME_WITH_TIMEZONE
-            JDBCType.TIMESTAMP_WITH_TIMEZONE -> JsonSchemaType.STRING_TIMESTAMP_WITH_TIMEZONE
+            JDBCType.LONGVARCHAR -> LeafType.STRING
+            JDBCType.DATE -> LeafType.DATE
+            JDBCType.TIME -> LeafType.TIME_WITHOUT_TIMEZONE
+            JDBCType.TIMESTAMP -> LeafType.TIMESTAMP_WITHOUT_TIMEZONE
+            JDBCType.TIME_WITH_TIMEZONE -> LeafType.TIME_WITH_TIMEZONE
+            JDBCType.TIMESTAMP_WITH_TIMEZONE -> LeafType.TIMESTAMP_WITH_TIMEZONE
             JDBCType.BLOB,
             JDBCType.BINARY,
             JDBCType.VARBINARY,
-            JDBCType.LONGVARBINARY -> JsonSchemaType.STRING_BASE_64
-            JDBCType.ARRAY -> JsonSchemaType.ARRAY
-            else -> JsonSchemaType.STRING
+            JDBCType.LONGVARBINARY -> LeafType.BINARY
+            JDBCType.ARRAY -> LeafType.STRING
+            else -> LeafType.STRING
         }
 }
