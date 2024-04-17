@@ -1,6 +1,5 @@
 package io.airbyte.cdk.consumers
 
-import com.fasterxml.jackson.databind.JsonNode
 import io.airbyte.cdk.jdbc.ColumnType
 import io.airbyte.cdk.jdbc.TableName
 import io.github.oshai.kotlinlogging.KotlinLogging
@@ -18,6 +17,11 @@ interface CatalogValidationFailureHandler {
     fun columnNotFound(streamName: String, streamNamespace: String?, columnName: String)
 
     fun columnTypeMismatch(streamName: String, streamNamespace: String?, columnName: String, expected: ColumnType, actual: ColumnType)
+
+    fun invalidCursor(streamName: String, streamNamespace: String?, cursor: String)
+
+    fun resetStream(streamName: String, streamNamespace: String?)
+
 }
 
 @Singleton
@@ -44,6 +48,19 @@ class LoggingCatalogValidationFailureHandler : CatalogValidationFailureHandler {
         logger.warn {
             "In table '$streamName' in ${inNamespace(streamNamespace)}: " +
                 "column '$columnName' not found."
+        }
+    }
+
+    override fun invalidCursor(streamName: String, streamNamespace: String?, cursor: String) {
+        logger.warn {
+            "In table '$streamName' in ${inNamespace(streamNamespace)}: " +
+                "invalid cursor '$cursor'."
+        }
+    }
+
+    override fun resetStream(streamName: String, streamNamespace: String?) {
+        logger.warn {
+            "Resetting stream '$streamName' in ${inNamespace(streamNamespace)}."
         }
     }
 

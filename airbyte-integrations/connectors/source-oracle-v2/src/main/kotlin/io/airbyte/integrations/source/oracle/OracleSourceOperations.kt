@@ -10,6 +10,8 @@ import io.airbyte.cdk.jdbc.LeafType
 import io.airbyte.cdk.jdbc.SelectFrom
 import io.airbyte.cdk.jdbc.SourceOperations
 import io.airbyte.cdk.jdbc.TableName
+import io.airbyte.cdk.read.SelectableStreamReadState
+import io.airbyte.cdk.read.StreamSpec
 import jakarta.inject.Singleton
 import java.sql.JDBCType
 
@@ -18,6 +20,13 @@ import java.sql.JDBCType
  */
 @Singleton
 class OracleSourceOperations : SourceOperations {
+
+    override fun selectFrom(
+        streamSpec: StreamSpec,
+        readState: SelectableStreamReadState
+    ): SourceOperations.SqlQueryWithBindings {
+        TODO("Not yet implemented")
+    }
 
     override fun selectFrom(selectFrom: SelectFrom): SourceOperations.SqlQueryWithBindings {
         val allColumnNames: List<String> =

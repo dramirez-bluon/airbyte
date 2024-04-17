@@ -2,6 +2,7 @@ package io.airbyte.cdk.jdbc
 
 import io.airbyte.cdk.command.ConnectorConfigurationSupplier
 import io.airbyte.cdk.command.SourceConnectorConfiguration
+import io.airbyte.cdk.read.CursorColumn
 import io.github.oshai.kotlinlogging.KotlinLogging
 import io.micronaut.context.annotation.Prototype
 import java.sql.Connection
@@ -120,6 +121,28 @@ private class JdbcMetadataQuerier(
         logger.info { "Found ${pksMap.size} primary key(s) in $table." }
         return pksMap.toSortedMap(Comparator.naturalOrder<String>()).values.map {
             it.toSortedMap().values.toList()
+        }
+    }
+
+    override fun maxCursorValue(table: TableName, cursorColumnName: String): String? {
+        val sql: String = discoverMapper.selectMaxCursorValue(table, cursorColumnName)
+        logger.info { "Querying $sql for sync preparation." }
+        try {
+            table.catalog?.let { conn.catalog = it }
+            table.schema?.let { conn.schema = it }
+            conn.createStatement().use { stmt: Statement ->
+                stmt.fetchSize = 1
+                val rs: ResultSet = stmt.executeQuery(sql)
+                val result: String? = if (!rs.next()) {
+                    null
+                } else {
+                    rs.getString(1)?.let { if (rs.wasNull()) null else it }
+                }
+                logger.info { "Max '$cursorColumnName' value is '${result ?: "NULL"}' in $table." }
+                return result
+            }
+        } catch (e: SQLException) {
+            throw RuntimeException("Max cursor value query failed with exception.", e)
         }
     }
 

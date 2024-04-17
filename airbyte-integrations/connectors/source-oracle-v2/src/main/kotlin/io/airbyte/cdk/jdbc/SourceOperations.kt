@@ -1,11 +1,19 @@
 package io.airbyte.cdk.jdbc
 
+import io.airbyte.cdk.read.CursorColumn
+import io.airbyte.cdk.read.DataColumn
+import io.airbyte.cdk.read.SelectableStreamReadState
+import io.airbyte.cdk.read.StreamSpec
 import java.sql.ResultSet
 
 /** Database-specific query builders and type mappers. */
 interface SourceOperations {
 
-    fun selectFrom(selectFrom: SelectFrom): SqlQueryWithBindings
+    fun selectFrom(
+        streamSpec: StreamSpec,
+        readState: SelectableStreamReadState,
+    ): SqlQueryWithBindings
+
     data class SqlQueryWithBindings(val sql: String, val params: List<String>)
 
     fun selectCheckpointLimit(table: TableName): String =
@@ -21,15 +29,16 @@ interface SourceOperations {
             table.name,
         ).joinToString(separator = ".")
 
-    fun dataColumnValues(selectFrom: SelectFrom, rs: ResultSet): List<Any?> =
-        selectFrom.dataColumns.map { c: DataColumn ->
+    fun dataColumnValues(streamSpec: StreamSpec, rs: ResultSet): List<Any?> =
+        streamSpec.dataColumns.map { c: DataColumn ->
             rs.getObject(c.metadata.name).let { if (rs.wasNull()) null else it }
         }
 
-    fun cursorColumnValues(selectFrom: SelectFrom, rs: ResultSet): List<String> =
-        selectFrom.cursorColumns.map { c: CursorColumn ->
-            rs.getString(c.name).let { if (rs.wasNull()) null else it }
-                ?: throw RuntimeException("Unexpected NULL value for cursor column ${c.name}.")
+    fun cursorColumnValue(streamSpec: StreamSpec, rs: ResultSet): String? =
+        if (streamSpec.pickedCursor == null) {
+            null
+        } else {
+            rs.getString(streamSpec.pickedCursor.name)?.let { if (rs.wasNull()) null else it }
         }
 
     fun mapArrayColumnValue(value: Any?): Any? = value

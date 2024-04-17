@@ -24,13 +24,8 @@ class OracleSourceDiscoverMapper(
 ) : DiscoverMapper {
 
     override fun selectStarFromTableLimit0(table: TableName): String {
-        val fullyQualifiedName: String = if (table.schema == null) {
-            table.name
-        } else {
-            "${table.schema}.${table.name}"
-        }
         // Oracle doesn't do LIMIT, instead we need to involve ROWNUM.
-        return "SELECT * FROM $fullyQualifiedName WHERE ROWNUM < 1"
+        return "SELECT * FROM ${table.fullyQualifiedName()} WHERE ROWNUM < 1"
     }
 
     override fun columnType(c: ColumnMetadata): ColumnType =
@@ -86,6 +81,12 @@ class OracleSourceDiscoverMapper(
             JDBCType.LONGVARCHAR -> true
             else -> false
         }
+
+    override fun selectMaxCursorValue(table: TableName, cursorColumnLabel: String): String =
+        "SELECT MAX($cursorColumnLabel) FROM ${table.fullyQualifiedName()}"
+
+    private fun TableName.fullyQualifiedName(): String =
+        if (schema == null) name else "${schema}.${name}"
 
     override fun airbyteStream(stream: DiscoveredStream): AirbyteStream =
         DiscoverMapper.basicAirbyteStream(this, stream).apply {

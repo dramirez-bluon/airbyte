@@ -13,6 +13,7 @@ import com.networknt.schema.SchemaValidatorsConfig
 import com.networknt.schema.SpecVersion
 import io.airbyte.commons.exceptions.ConfigErrorException
 import io.airbyte.commons.jackson.MoreMappers
+import io.airbyte.commons.json.Jsons
 import io.airbyte.protocol.models.v0.AirbyteGlobalState
 import io.airbyte.protocol.models.v0.AirbyteStateMessage
 import io.airbyte.protocol.models.v0.AirbyteStream
@@ -98,12 +99,12 @@ private class ConnectorInputStateSupplierImpl : ConnectorInputStateSupplier {
             }
             val global: AirbyteGlobalState = filtered.first().global
             return@lazy GlobalInputState(
-                GlobalStateValue(global.sharedState),
+                JsonUtils.parseUnvalidated(global.sharedState, GlobalStateValue::class.java),
                 global.streamStates.associate {
                     AirbyteStreamNameNamespacePair(
                         it.streamDescriptor.name,
                         it.streamDescriptor.namespace
-                    ) to StreamStateValue(it.streamState)
+                    ) to JsonUtils.parseUnvalidated(it.streamState, StreamStateValue::class.java)
                 }
             )
         }
@@ -117,7 +118,9 @@ private class ConnectorInputStateSupplierImpl : ConnectorInputStateSupplier {
                     )
                 }
                 .reduce { _, _, msg -> msg }
-                .mapValues { StreamStateValue(it.value.streamState) }
+                .mapValues {
+                    JsonUtils.parseUnvalidated(it.value.streamState, StreamStateValue::class.java)
+                }
         if (lastOfEachStream.size < filtered.size) {
             logger.warn { "Discarded all but last stream state for each stream descriptor." }
         }
@@ -165,14 +168,15 @@ private data object JsonUtils {
                 )
             }
         }
-        return jsonList.map {
-            try {
-                mapper.treeToValue(it, elementClass)
-            } catch (e: Exception) {
-                throw ConfigErrorException("failed to map valid json to $elementClass ", e)
-            }
-        }
+        return jsonList.map { parseUnvalidated(it, elementClass) }
     }
+
+    fun <T> parseUnvalidated(jsonNode: JsonNode, klazz: Class<T>): T =
+        try {
+            mapper.treeToValue(jsonNode, klazz)
+        } catch (e: Exception) {
+            throw ConfigErrorException("failed to map valid json to $klazz ", e)
+        }
 
     val generatorConfig: JsonSchemaConfig =
         JsonSchemaConfig.vanillaJsonSchemaDraft4()

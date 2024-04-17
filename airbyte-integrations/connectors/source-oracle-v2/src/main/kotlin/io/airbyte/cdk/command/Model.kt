@@ -1,11 +1,14 @@
 package io.airbyte.cdk.command
 
+import com.fasterxml.jackson.annotation.JsonIgnore
+import com.fasterxml.jackson.annotation.JsonProperty
 import com.fasterxml.jackson.databind.JsonNode
 import io.airbyte.cdk.ssh.SshConnectionOptions
 import io.airbyte.cdk.ssh.SshTunnelMethodConfiguration
 import io.airbyte.protocol.models.v0.AirbyteStateMessage
 import io.airbyte.protocol.models.v0.AirbyteStreamNameNamespacePair
 import io.airbyte.protocol.models.v0.ConfiguredAirbyteCatalog
+import io.airbyte.protocol.models.v0.SyncMode
 import java.util.function.Supplier
 
 
@@ -63,18 +66,17 @@ interface ConnectorConfigurationSupplier<T : ConnectorConfiguration> : Supplier<
 
 interface ConfiguredAirbyteCatalogSupplier : Supplier<ConfiguredAirbyteCatalog>
 
-@JvmInline value class GlobalStateValue(val wrapped: JsonNode?) {
+data class StreamStateValue(
+    @JsonProperty("primary_keys") val primaryKey: Map<String, String>,
+    @JsonProperty("cursors") val cursors: Map<String, String?>,
+)
 
-}
-
-@JvmInline value class StreamStateValue(val wrapped: JsonNode?) {
-
-}
+data class GlobalStateValue(
+    @JsonProperty("cdc") val cdc: JsonNode
+)
 
 sealed interface InputState {
     val stream: Map<AirbyteStreamNameNamespacePair, StreamStateValue>
-    fun getStateValue(name: String, namespace: String?): StreamStateValue =
-        stream[AirbyteStreamNameNamespacePair(name, namespace)] ?: StreamStateValue(null)
 }
 
 data object EmptyInputState : InputState {

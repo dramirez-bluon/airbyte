@@ -16,4 +16,7 @@ interface MetadataQuerier : AutoCloseable {
 
     /** Queries the information_schema for all primary keys for the given table. */
     fun primaryKeys(table: TableName): List<List<String>>
+
+    /* Queries the table for the max value of the column. */
+    fun maxCursorValue(table: TableName, cursorColumnName: String): String?
 }

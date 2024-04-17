@@ -8,7 +8,9 @@ interface DiscoverMapper {
     fun selectStarFromTableLimit0(table: TableName): String
     fun columnType(c: ColumnMetadata): ColumnType
     fun isPossibleCursor(c: ColumnMetadata): Boolean
+    fun selectMaxCursorValue(table: TableName, cursorColumnName: String): String
     fun airbyteStream(stream: DiscoveredStream): AirbyteStream
+
 
     companion object {
         fun basicAirbyteStream(mapper: DiscoverMapper, stream: DiscoveredStream): AirbyteStream {
