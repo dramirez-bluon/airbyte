@@ -14,7 +14,7 @@ from typing import ClassVar, List, Optional
 import requests  # type: ignore
 import semver
 import yaml  # type: ignore
-from dagger import Container, Directory
+from dagger import Container, Directory, File
 from pipelines import hacks
 from pipelines.airbyte_ci.connectors.context import ConnectorContext
 from pipelines.airbyte_ci.steps.docker import SimpleDockerStep
@@ -301,3 +301,110 @@ class AcceptanceTests(Step):
             )
 
         return cat_container.with_unix_socket("/var/run/docker.sock", self.context.dagger_client.host().unix_socket("/var/run/docker.sock"))
+
+
+class RegressionTests(Step):
+    """A step to run regression tests for a connector."""
+
+    context: ConnectorContext
+    title = "Regression tests"
+    skipped_exit_code = 5
+    accept_extra_params = True
+
+    @property
+    def default_params(self) -> STEP_PARAMS:
+        """Default pytest options.
+
+        Returns:
+            dict: The default pytest options.
+        """
+        return super().default_params | {
+            "-ra": [],  # Show extra test summary info in the report for all but the passed tests
+            "--disable-warnings": [],  # Disable warnings in the pytest report
+            "--durations": ["3"],  # Show the 3 slowest tests in the report
+        }
+
+    @property
+    def regression_tests_command(self) -> List[str]:
+        return [
+            "poetry",
+            "run",
+            "pytest",
+            "src/live_tests/regression_tests",
+            "--connector-image",
+            self.connector_image,
+            "--connection-id",
+            self.connection_id,
+            "--control-version",
+            self.control_version,
+            "--target-version",
+            self.target_version,
+            "--pr-url",
+            self.pr_url,
+        ]
+
+    def __init__(self, context: ConnectorContext) -> None:
+        """Create a step to run regression tests for a connector.
+
+        Args:
+            context (ConnectorContext): The current test context, providing a connector object, a dagger client and a repository directory.
+        """
+        super().__init__(context)
+        self.connector_image = context.docker_image.split(":")[0]
+        self.connection_id = context.regression_test_connection_id
+        self.control_version, self.target_version = context.regression_test_versions
+        self.pr_url = context.regression_test_pr_url
+
+    async def _run(self, control_container: Container, target_container: Container) -> StepResult:
+        """Run the regression test suite.
+
+        Args:
+            control_container (Container): The container holding the control connector test image.
+            target_container (Container): The container holding the target connector test image.
+
+        Returns:
+            StepResult: Failure or success of the regression tests with stdout and stderr.
+        """
+        # TODO: use control & target containers
+        live_tests_dir = self.context.live_tests_dir
+        container = await self._build_regression_test_container(live_tests_dir)
+        container = container.with_(hacks.never_fail_exec(self.regression_tests_command))
+        step_result = await self.get_step_result(container)
+        return step_result
+
+    async def _build_regression_test_container(self, test_dir: Directory) -> Container:
+        """Create a container to run regression tests."""
+        image = "python:3.10-slim"
+
+        container = self.dagger_client.container().from_(image)
+        container = (container.with_exec([
+            "apt-get", "update"
+        ]).with_exec([
+            "apt-get", "install", "-y", "git", "openssh-client", "curl", "docker.io"
+        ]).with_exec([
+            "bash", "-c", "curl https://sdk.cloud.google.com | bash"
+        ]).with_env_variable(
+         "PATH", "/root/google-cloud-sdk/bin:$PATH", expand=True
+        ).with_mounted_file(
+            "/root/.ssh/id_rsa", self.dagger_client.host().file(str(Path("~/.ssh/id_rsa").expanduser()))  # TODO
+        ).with_mounted_file(
+            "/root/.ssh/known_hosts",
+            self.dagger_client.host().file(str(Path("~/.ssh/known_hosts").expanduser()))  # TODO
+        ).with_mounted_file(
+            "/root/.config/gcloud/application_default_credentials.json",
+            self.dagger_client.host().file(str(Path("~/.config/gcloud/application_default_credentials.json").expanduser()))  # TODO
+        ).with_mounted_directory(
+            "/app", test_dir
+        ).with_workdir(
+            f"/app"
+        ).with_exec([
+            "pip", "install", "poetry"
+        ]).with_exec(
+            ["poetry", "lock", "--no-update"]
+        ).with_exec([
+            "poetry", "install"
+        ])
+        ).with_unix_socket(
+            "/var/run/docker.sock", self.dagger_client.host().unix_socket("/var/run/docker.sock")
+        )
+        return container

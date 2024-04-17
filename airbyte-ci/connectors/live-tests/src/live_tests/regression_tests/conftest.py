@@ -62,7 +62,7 @@ def pytest_addoption(parser: Parser) -> None:
     parser.addoption(
         "--target-version",
         default="dev",
-        help="The target version used for regression testing. Defaults to latest",
+        help="The target version used for regression testing. Defaults to dev",
     )
     parser.addoption("--config-path")
     parser.addoption("--catalog-path")
@@ -73,8 +73,8 @@ def pytest_addoption(parser: Parser) -> None:
 
 def pytest_configure(config: Config) -> None:
     user_email = get_user_email()
-    prompt_for_confirmation(user_email)
-    track_usage(user_email, vars(config.option))
+    # prompt_for_confirmation(user_email)  # TODO - handle CI case
+    # track_usage(user_email, vars(config.option))  # TODO - handle CI case
 
     config.stash[stash_keys.AIRBYTE_API_KEY] = get_airbyte_api_key()
     config.stash[stash_keys.USER] = user_email
@@ -101,7 +101,7 @@ def pytest_configure(config: Config) -> None:
     custom_source_config_path = config.getoption("--config-path")
     custom_configured_catalog_path = config.getoption("--catalog-path")
     custom_state_path = config.getoption("--state-path")
-    config.stash[stash_keys.SHOULD_READ_WITH_STATE] = prompt_for_read_with_or_without_state()
+    config.stash[stash_keys.SHOULD_READ_WITH_STATE] = True  # TODO - handle CI case
     retrieval_reason = f"Running regression tests on connection {config.stash[stash_keys.CONNECTION_ID]} for connector {config.stash[stash_keys.CONNECTOR_IMAGE]} on the control ({config.stash[stash_keys.CONTROL_VERSION]}) and target versions ({config.stash[stash_keys.TARGET_VERSION]})."
     try:
         config.stash[stash_keys.CONNECTION_OBJECTS] = get_connection_objects(
@@ -162,18 +162,18 @@ def pytest_terminal_summary(terminalreporter: SugarTerminalReporter, exitstatus:
         f"All tests artifacts for this sessions should be available in {config.stash[stash_keys.TEST_ARTIFACT_DIRECTORY].resolve()}"
     )
 
-    try:
-        Prompt.ask(
-            textwrap.dedent(
-                """
-            Test artifacts will be destroyed after this prompt. 
-            Press enter when you're done reading them.
-            🚨 Do not copy them elsewhere on your disk!!! 🚨
-            """
-            )
-        )
-    finally:
-        clean_up_artifacts(MAIN_OUTPUT_DIRECTORY, LOGGER)
+    # try:  # TODO - handle CI case
+    #     Prompt.ask(
+    #         textwrap.dedent(
+    #             """
+    #         Test artifacts will be destroyed after this prompt.
+    #         Press enter when you're done reading them.
+    #         🚨 Do not copy them elsewhere on your disk!!! 🚨
+    #         """
+    #         )
+    #     )
+    # finally:
+    # clean_up_artifacts(MAIN_OUTPUT_DIRECTORY, LOGGER)
 
 
 def pytest_keyboard_interrupt(excinfo: Exception) -> None:
