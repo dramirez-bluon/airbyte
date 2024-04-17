@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from datetime import datetime
 from types import TracebackType
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Tuple
 
 import yaml  # type: ignore
 from anyio import Path
@@ -68,6 +68,9 @@ class ConnectorContext(PipelineContext):
         concurrent_cat: Optional[bool] = False,
         run_step_options: RunStepOptions = RunStepOptions(),
         targeted_platforms: Sequence[Platform] = BUILD_PLATFORMS,
+        regression_test_versions: Optional[Tuple[str, str]] = None,
+        regression_test_connection_id: Optional[str] = None,
+        regression_test_pr_url: str = "",
     ) -> None:
         """Initialize a connector context.
 
@@ -116,6 +119,9 @@ class ConnectorContext(PipelineContext):
         self.concurrent_cat = concurrent_cat
         self._connector_secrets: Optional[Dict[str, Secret]] = None
         self.targeted_platforms = targeted_platforms
+        self.regression_test_versions = regression_test_versions
+        self.regression_test_connection_id = regression_test_connection_id
+        self.regression_test_pr_url = regression_test_pr_url
 
         super().__init__(
             pipeline_name=pipeline_name,
@@ -173,6 +179,10 @@ class ConnectorContext(PipelineContext):
     @property
     def connector_acceptance_test_source_dir(self) -> Directory:
         return self.get_repo_dir("airbyte-integrations/bases/connector-acceptance-test")
+
+    @property
+    def live_tests_dir(self) -> Directory:
+        return self.get_repo_dir("airbyte-ci/connectors/live-tests")
 
     @property
     def should_save_updated_secrets(self) -> bool:
