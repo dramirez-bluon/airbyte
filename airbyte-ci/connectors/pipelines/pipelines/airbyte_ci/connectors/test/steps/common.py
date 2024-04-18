@@ -6,6 +6,7 @@
 
 import datetime
 import os
+import time
 from abc import ABC, abstractmethod
 from functools import cached_property
 from pathlib import Path
@@ -20,7 +21,7 @@ from pipelines.airbyte_ci.connectors.context import ConnectorContext
 from pipelines.airbyte_ci.steps.docker import SimpleDockerStep
 from pipelines.consts import INTERNAL_TOOL_PATHS, CIContext
 from pipelines.dagger.actions import secrets
-from pipelines.helpers.utils import METADATA_FILE_NAME
+from pipelines.helpers.utils import METADATA_FILE_NAME, get_exec_result
 from pipelines.models.steps import STEP_PARAMS, MountPath, Step, StepResult, StepStatus
 
 
@@ -324,8 +325,7 @@ class RegressionTests(Step):
             "--durations": ["3"],  # Show the 3 slowest tests in the report
         }
 
-    @property
-    def regression_tests_command(self) -> List[str]:
+    def regression_tests_command(self, start_timestamp: int) -> List[str]:
         return [
             "poetry",
             "run",
@@ -341,6 +341,8 @@ class RegressionTests(Step):
             self.target_version,
             "--pr-url",
             self.pr_url,
+            "--start-timestamp",
+            str(start_timestamp),
         ]
 
     def __init__(self, context: ConnectorContext) -> None:
@@ -367,11 +369,25 @@ class RegressionTests(Step):
         """
         # TODO: use control & target containers
         live_tests_dir = self.context.live_tests_dir
+        start_timestamp = int(time.time())
         container = await self._build_regression_test_container(live_tests_dir)
-        container = container.with_(hacks.never_fail_exec(self.regression_tests_command))
+        container = container.with_(hacks.never_fail_exec(self.regression_tests_command(start_timestamp)))
+
         await container.directory("/tmp/regression_tests_artifacts").export("/tmp/regression_tests_artifacts")
-        step_result = await self.get_step_result(container)
-        return step_result
+        path_to_report = f"/tmp/regression_tests_artifacts/session_{int(start_timestamp)}/report.html"
+        exit_code, stdout, stderr = await get_exec_result(container)
+
+        with open(path_to_report, "r") as fp:
+            regression_test_report = fp.read()
+
+        return StepResult(
+            step=self,
+            status=self.get_step_status_from_exit_code(exit_code),
+            stderr=stderr,
+            stdout=stdout,
+            output=container,
+            report=regression_test_report,
+        )
 
     async def _build_regression_test_container(self, test_dir: Directory) -> Container:
         """Create a container to run regression tests."""
