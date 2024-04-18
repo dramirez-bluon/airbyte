@@ -369,6 +369,7 @@ class RegressionTests(Step):
         live_tests_dir = self.context.live_tests_dir
         container = await self._build_regression_test_container(live_tests_dir)
         container = container.with_(hacks.never_fail_exec(self.regression_tests_command))
+        await container.directory("/tmp/regression_tests_artifacts").export("/tmp/regression_tests_artifacts")
         step_result = await self.get_step_result(container)
         return step_result
 
