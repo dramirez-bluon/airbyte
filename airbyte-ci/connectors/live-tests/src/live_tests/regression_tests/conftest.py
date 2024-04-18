@@ -83,8 +83,12 @@ def pytest_configure(config: Config) -> None:
     user_email = get_user_email()
     config.stash[stash_keys.IS_AIRBYTE_CI] = os.getenv("IS_AIRBYTE_CI", False)
     config.stash[stash_keys.IS_PRODUCTION_CI] = os.getenv("CI", False)
-    # track_usage(user_email, vars(config.option))  # TODO - handle CI case
 
+    track_usage(
+        "production-ci" if config.stash[stash_keys.IS_PRODUCTION_CI] else
+        "local-ci" if config.stash[stash_keys.IS_AIRBYTE_CI] else
+        user_email, vars(config.option)
+    )
     config.stash[stash_keys.AIRBYTE_API_KEY] = get_airbyte_api_key()
     config.stash[stash_keys.USER] = user_email
     start_timestamp = int(config.getoption("--start-timestamp") or time.time())
