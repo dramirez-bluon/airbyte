@@ -68,6 +68,7 @@ def pytest_addoption(parser: Parser) -> None:
     parser.addoption("--catalog-path")
     parser.addoption("--state-path")
     parser.addoption("--connection-id")
+    parser.addoption("--start-timestamp")
     parser.addoption("--pr-url", help="The URL of the PR you are testing")
 
 
@@ -79,6 +80,7 @@ def pytest_configure(config: Config) -> None:
     config.stash[stash_keys.AIRBYTE_API_KEY] = get_airbyte_api_key()
     config.stash[stash_keys.USER] = user_email
     start_timestamp = int(time.time())
+    start_timestamp = int(config.getoption("--start-timestamp")) or int(time.time())
     test_artifacts_directory = MAIN_OUTPUT_DIRECTORY / f"session_{start_timestamp}"
     duckdb_path = test_artifacts_directory / "duckdb.db"
     config.stash[stash_keys.DUCKDB_PATH] = duckdb_path
