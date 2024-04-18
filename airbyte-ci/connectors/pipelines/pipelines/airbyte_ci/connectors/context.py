@@ -71,6 +71,7 @@ class ConnectorContext(PipelineContext):
         regression_test_versions: Optional[Tuple[str, str]] = None,
         regression_test_connection_id: Optional[str] = None,
         regression_test_pr_url: str = "",
+        should_read_with_state: bool = True,
     ) -> None:
         """Initialize a connector context.
 
@@ -122,6 +123,7 @@ class ConnectorContext(PipelineContext):
         self.regression_test_versions = regression_test_versions
         self.regression_test_connection_id = regression_test_connection_id
         self.regression_test_pr_url = regression_test_pr_url
+        self.should_read_with_state = should_read_with_state
 
         super().__init__(
             pipeline_name=pipeline_name,
