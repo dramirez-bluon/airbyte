@@ -68,19 +68,26 @@ def pytest_addoption(parser: Parser) -> None:
     parser.addoption("--catalog-path")
     parser.addoption("--state-path")
     parser.addoption("--connection-id")
-    parser.addoption("--start-timestamp")
     parser.addoption("--pr-url", help="The URL of the PR you are testing")
-
+    # Required when running in CI
+    parser.addoption("--start-timestamp", type=int)
+    parser.addoption(
+        "--should-read-with-state",
+        type=bool,
+        help="Whether to run the `read` command with state. \n"
+             "We recommend reading with state to properly test incremental sync. \n"
+             "But if the target version introduces a breaking change in the state, you might want to run without state. \n"
+    )
 
 def pytest_configure(config: Config) -> None:
     user_email = get_user_email()
-    # prompt_for_confirmation(user_email)  # TODO - handle CI case
+    config.stash[stash_keys.IS_AIRBYTE_CI] = os.getenv("IS_AIRBYTE_CI", False)
+    config.stash[stash_keys.IS_PRODUCTION_CI] = os.getenv("CI", False)
     # track_usage(user_email, vars(config.option))  # TODO - handle CI case
 
     config.stash[stash_keys.AIRBYTE_API_KEY] = get_airbyte_api_key()
     config.stash[stash_keys.USER] = user_email
-    start_timestamp = int(time.time())
-    start_timestamp = int(config.getoption("--start-timestamp")) or int(time.time())
+    start_timestamp = int(config.getoption("--start-timestamp") or time.time())
     test_artifacts_directory = MAIN_OUTPUT_DIRECTORY / f"session_{start_timestamp}"
     duckdb_path = test_artifacts_directory / "duckdb.db"
     config.stash[stash_keys.DUCKDB_PATH] = duckdb_path
@@ -103,7 +110,15 @@ def pytest_configure(config: Config) -> None:
     custom_source_config_path = config.getoption("--config-path")
     custom_configured_catalog_path = config.getoption("--catalog-path")
     custom_state_path = config.getoption("--state-path")
-    config.stash[stash_keys.SHOULD_READ_WITH_STATE] = True  # TODO - handle CI case
+
+    _should_read_with_state = config.getoption("--should-read-with-state")
+    if config.stash[stash_keys.IS_AIRBYTE_CI]:
+        assert _should_read_with_state is not None
+    if _should_read_with_state is not None:
+        config.stash[stash_keys.SHOULD_READ_WITH_STATE] = _should_read_with_state
+    else:
+        config.stash[stash_keys.SHOULD_READ_WITH_STATE] = prompt_for_read_with_or_without_state()
+
     retrieval_reason = f"Running regression tests on connection {config.stash[stash_keys.CONNECTION_ID]} for connector {config.stash[stash_keys.CONNECTOR_IMAGE]} on the control ({config.stash[stash_keys.CONTROL_VERSION]}) and target versions ({config.stash[stash_keys.TARGET_VERSION]})."
     try:
         config.stash[stash_keys.CONNECTION_OBJECTS] = get_connection_objects(

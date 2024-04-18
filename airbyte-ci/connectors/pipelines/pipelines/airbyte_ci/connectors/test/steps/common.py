@@ -343,6 +343,8 @@ class RegressionTests(Step):
             self.pr_url,
             "--start-timestamp",
             str(start_timestamp),
+            "--should-read-with-state",
+            str(self.should_read_with_state),
         ]
 
     def __init__(self, context: ConnectorContext) -> None:
@@ -356,6 +358,7 @@ class RegressionTests(Step):
         self.connection_id = context.regression_test_connection_id
         self.control_version, self.target_version = context.regression_test_versions
         self.pr_url = context.regression_test_pr_url
+        self.should_read_with_state = context.should_read_with_state
 
     async def _run(self, control_container: Container, target_container: Container) -> StepResult:
         """Run the regression test suite.
@@ -423,5 +426,7 @@ class RegressionTests(Step):
         ])
         ).with_unix_socket(
             "/var/run/docker.sock", self.dagger_client.host().unix_socket("/var/run/docker.sock")
+        ).with_env_variable(
+            "IS_AIRBYTE_CI", "true"
         )
         return container
