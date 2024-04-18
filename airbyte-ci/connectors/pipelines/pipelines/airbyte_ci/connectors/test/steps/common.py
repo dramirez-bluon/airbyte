@@ -375,9 +375,9 @@ class RegressionTests(Step):
         start_timestamp = int(time.time())
         container = await self._build_regression_test_container(live_tests_dir)
         container = container.with_(hacks.never_fail_exec(self.regression_tests_command(start_timestamp)))
-
-        await container.directory("/tmp/regression_tests_artifacts").export("/tmp/regression_tests_artifacts")
-        path_to_report = f"/tmp/regression_tests_artifacts/session_{int(start_timestamp)}/report.html"
+        regression_tests_artifacts_dir = str(self.context.regression_tests_artifacts_dir)
+        await container.directory(regression_tests_artifacts_dir).export(regression_tests_artifacts_dir)
+        path_to_report = f"{regression_tests_artifacts_dir}/session_{int(start_timestamp)}/report.html"
         exit_code, stdout, stderr = await get_exec_result(container)
 
         with open(path_to_report, "r") as fp:

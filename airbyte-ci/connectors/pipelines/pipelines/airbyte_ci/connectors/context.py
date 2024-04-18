@@ -187,6 +187,10 @@ class ConnectorContext(PipelineContext):
         return self.get_repo_dir("airbyte-ci/connectors/live-tests")
 
     @property
+    def regression_tests_artifacts_dir(self) -> Path:
+        return Path("/tmp/regression_tests_artifacts")
+
+    @property
     def should_save_updated_secrets(self) -> bool:
         return self.use_remote_secrets and self.updated_secrets_dir is not None
 
