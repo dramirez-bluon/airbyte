@@ -21,59 +21,9 @@ import io.airbyte.protocol.models.v0.AirbyteStreamNameNamespacePair
 import io.airbyte.protocol.models.v0.ConfiguredAirbyteCatalog
 import io.airbyte.protocol.models.v0.ConfiguredAirbyteStream
 import io.airbyte.protocol.models.v0.SyncMode
-import java.time.Instant
 
-data class ReadSpecsToStates(
-    val global: Pair<GlobalSpec, GlobalReadState>?,
-    val streams: Map<StreamSpec, StreamReadState>,
-)
 
-data class GlobalSpec(
-    val streamSpecs: List<StreamSpec>
-)
-
-data class StreamSpec(
-    val configuredStream: ConfiguredAirbyteStream,
-    val table: TableName,
-    val dataColumns: List<DataColumn>,
-    val primaryKeyCandidates: List<List<DataColumn>>,
-    val cursorCandidates: List<CursorColumn>,
-    val configuredSyncMode: SyncMode,
-    val configuredPrimaryKey: List<DataColumn>?,
-    val configuredCursor: CursorColumn?,
-) {
-
-    val stream: AirbyteStream = configuredStream.stream
-
-    val name: String = configuredStream.stream.name
-
-    val namespace: String? = configuredStream.stream.namespace
-
-    val namePair: AirbyteStreamNameNamespacePair =
-        AirbyteStreamNameNamespacePair.fromConfiguredAirbyteSteam(configuredStream)
-
-    val pickedPrimaryKey: List<DataColumn>? =
-        configuredPrimaryKey ?: primaryKeyCandidates.firstOrNull()
-
-    val pickedCursor: CursorColumn? =
-        configuredCursor ?: cursorCandidates.firstOrNull()
-}
-
-sealed interface Column {
-    val type: ColumnType
-}
-
-data class DataColumn(
-    val metadata: ColumnMetadata,
-    override val type: ColumnType
-) : Column
-
-data class CursorColumn(
-    val name: String,
-    override val type: ColumnType,
-) : Column
-
-data class ReadSpecsToStatesFactory(
+data class StateManagerFactory(
     val metadataQuerier: MetadataQuerier,
     val discoverMapper: DiscoverMapper,
     val validationHandler: CatalogValidationFailureHandler
@@ -83,7 +33,7 @@ data class ReadSpecsToStatesFactory(
         config: SourceConnectorConfiguration,
         configuredCatalog: ConfiguredAirbyteCatalog,
         inputState: InputState,
-    ): ReadSpecsToStates {
+    ): StateManager {
         val isGlobal: Boolean =
             config.expectedStateType == AirbyteStateMessage.AirbyteStateType.GLOBAL
         when (inputState) {
@@ -106,12 +56,12 @@ data class ReadSpecsToStatesFactory(
             toStreamSpec(it, tableNames)
         }
         val globalSpec = GlobalSpec(streamSpecs)
-        return ReadSpecsToStates(
-            global = when (inputState) {
+        return StateManager(
+            initialGlobal = when (inputState) {
                 is GlobalInputState -> globalSpec to CdcOngoing(inputState.global.cdc)
                 else -> if (isGlobal) globalSpec to startCdc(globalSpec) else null
             },
-            streams = streamSpecs.associateWith { streamSpec: StreamSpec ->
+            initialStreams = streamSpecs.associateWith { streamSpec: StreamSpec ->
                 val cs: ConfiguredAirbyteStream =
                         configuredCatalog.streams.find { it.stream == streamSpec.stream }!!
                 val readKind: ReadKind = when (cs.syncMode) {
@@ -120,7 +70,7 @@ data class ReadSpecsToStatesFactory(
                 }
                 val value: StreamStateValue? =
                         inputState.stream[AirbyteStreamNameNamespacePair.fromConfiguredAirbyteSteam(cs)]
-                buildStreamReadState(readKind, streamSpec, value) as SerializableStreamReadState
+                buildStreamReadState(readKind, streamSpec, value) as SerializableStreamState
             },
         )
     }
@@ -208,7 +158,7 @@ data class ReadSpecsToStatesFactory(
         )
     }
 
-    private fun startCdc(spec: GlobalSpec): GlobalReadState {
+    private fun startCdc(spec: GlobalSpec): State<GlobalSpec> {
         // TODO: add CDC support.
         return CdcStarting(Jsons.emptyObject())
     }
@@ -217,7 +167,7 @@ data class ReadSpecsToStatesFactory(
         readKind: ReadKind,
         spec: StreamSpec,
         stateValue: StreamStateValue?
-    ): StreamReadState {
+    ): StreamState {
         if (stateValue == null) {
             return when (readKind) {
                 ReadKind.CDC -> startCdcInitialSync(spec)
@@ -287,12 +237,12 @@ data class ReadSpecsToStatesFactory(
         }
     }
 
-    private fun startCdcInitialSync(spec: StreamSpec): StreamReadState =
+    private fun startCdcInitialSync(spec: StreamSpec): StreamState =
         spec.pickedPrimaryKey
             ?.let { CdcInitialSyncStarting(it) }
             ?: CdcInitialSyncNotStarted
 
-    private fun startCursorBasedIncremental(spec: StreamSpec): StreamReadState {
+    private fun startCursorBasedIncremental(spec: StreamSpec): StreamState {
         if (spec.pickedCursor == null || spec.pickedPrimaryKey == null) {
             return CursorBasedIncrementalNotStarted
         }
@@ -303,7 +253,7 @@ data class ReadSpecsToStatesFactory(
         )
     }
 
-    private fun startFullRefresh(spec: StreamSpec): StreamReadState =
+    private fun startFullRefresh(spec: StreamSpec): StreamState =
         spec.pickedPrimaryKey
             ?.let { FullRefreshResumableStarting(it) }
             ?: FullRefreshNonResumableStarting

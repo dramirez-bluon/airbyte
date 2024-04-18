@@ -44,38 +44,30 @@ class CheckOperation(
                 e.message?.let { "Message: $it" },
             ).joinToString(separator = "; ")
             ApmTraceUtils.addExceptionToTrace(e)
-            outputConsumer.accept(AirbyteMessage()
-                .withType(AirbyteMessage.Type.TRACE)
-                .withTrace(AirbyteTraceMessage()
-                    .withType(AirbyteTraceMessage.Type.ERROR)
-                    .withError(AirbyteErrorTraceMessage()
-                        .withFailureType(AirbyteErrorTraceMessage.FailureType.CONFIG_ERROR)
-                        .withMessage(message)
-                        .withInternalMessage(e.toString())
-                        .withStackTrace(ExceptionUtils.getStackTrace(e)))))
-            outputConsumer.accept(AirbyteMessage()
-                .withType(AirbyteMessage.Type.CONNECTION_STATUS)
-                .withConnectionStatus(AirbyteConnectionStatus()
+            outputConsumer.accept(AirbyteTraceMessage()
+                .withType(AirbyteTraceMessage.Type.ERROR)
+                .withError(AirbyteErrorTraceMessage()
+                    .withFailureType(AirbyteErrorTraceMessage.FailureType.CONFIG_ERROR)
                     .withMessage(message)
-                    .withStatus(AirbyteConnectionStatus.Status.FAILED)))
+                    .withInternalMessage(e.toString())
+                    .withStackTrace(ExceptionUtils.getStackTrace(e))))
+            outputConsumer.accept(AirbyteConnectionStatus()
+                .withMessage(message)
+                .withStatus(AirbyteConnectionStatus.Status.FAILED))
             logger.info { "Config check failed." }
             return
         } catch (e: Exception) {
             logger.debug (e) { "Exception while checking config." }
             ApmTraceUtils.addExceptionToTrace(e)
-            outputConsumer.accept(AirbyteMessage()
-                .withType(AirbyteMessage.Type.CONNECTION_STATUS)
-                .withConnectionStatus(AirbyteConnectionStatus()
-                    .withMessage(String.format(COMMON_EXCEPTION_MESSAGE_TEMPLATE, e.message))
-                    .withStatus(AirbyteConnectionStatus.Status.FAILED)))
+            outputConsumer.accept(AirbyteConnectionStatus()
+                .withMessage(String.format(COMMON_EXCEPTION_MESSAGE_TEMPLATE, e.message))
+                .withStatus(AirbyteConnectionStatus.Status.FAILED))
             logger.info { "Config check failed." }
             return
         }
         logger.info { "Config check completed successfully." }
-        outputConsumer.accept(AirbyteMessage()
-            .withType(AirbyteMessage.Type.CONNECTION_STATUS)
-            .withConnectionStatus(AirbyteConnectionStatus()
-                .withStatus(AirbyteConnectionStatus.Status.SUCCEEDED)))
+        outputConsumer.accept(AirbyteConnectionStatus()
+            .withStatus(AirbyteConnectionStatus.Status.SUCCEEDED))
     }
 
     override fun close() {

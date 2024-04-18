@@ -46,9 +46,7 @@ class SpecOperation(
                 e,
             )
         }
-        outputConsumer.accept(AirbyteMessage()
-            .withType(AirbyteMessage.Type.SPEC)
-            .withSpec(spec))
+        outputConsumer.accept(spec)
     }
 
 }

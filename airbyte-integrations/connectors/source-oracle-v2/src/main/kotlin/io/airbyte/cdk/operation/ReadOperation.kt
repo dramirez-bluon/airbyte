@@ -17,10 +17,10 @@ import io.airbyte.cdk.jdbc.MetadataQuerier
 import io.airbyte.cdk.jdbc.RowToRecordData
 import io.airbyte.cdk.jdbc.SourceOperations
 import io.airbyte.cdk.read.ReadSpecsToStates
-import io.airbyte.cdk.read.ReadSpecsToStatesFactory
-import io.airbyte.cdk.read.SelectableStreamReadState
+import io.airbyte.cdk.read.StateManagerFactory
+import io.airbyte.cdk.read.SelectableStreamState
+import io.airbyte.cdk.read.StateManager
 import io.airbyte.cdk.read.StreamSpec
-import io.airbyte.commons.json.Jsons
 import io.airbyte.protocol.models.v0.AirbyteMessage
 import io.airbyte.protocol.models.v0.AirbyteRecordMessage
 import io.airbyte.protocol.models.v0.AirbyteStateMessage
@@ -32,6 +32,7 @@ import jakarta.inject.Singleton
 import java.sql.Connection
 import java.sql.PreparedStatement
 import java.sql.ResultSet
+import java.time.Clock
 import java.time.Instant
 
 private val logger = KotlinLogging.logger {}
@@ -51,30 +52,31 @@ class ReadOperation(
     val jdbcConnectionFactory: JdbcConnectionFactory,
     val outputConsumer: OutputConsumer,
     val validationHandler: CatalogValidationFailureHandler,
+    val clock: Clock
 ) : Operation, AutoCloseable {
 
     override val type = OperationType.READ
 
-    val emittedAt: Instant = Instant.now(),
+    val emittedAt: Instant = Instant.now(clock)
 
-    private val factory = ReadSpecsToStatesFactory(
+    private val factory = StateManagerFactory(
         metadataQuerier,
         discoverMapper,
         validationHandler
     )
 
     override fun execute() {
-        val readSpecsToStates: ReadSpecsToStates =
+        val stateManager: StateManager =
             factory.create(configSupplier.get(), catalogSupplier.get(), stateSupplier.get())
-        for ((streamSpec, streamReadState) in readSpecsToStates.streams) {
+        for ((streamSpec, streamReadState) in stateManager.getStreams()) {
             when (streamReadState) {
-                is SelectableStreamReadState -> readStream(streamSpec, streamReadState)
+                is SelectableStreamState -> readStream(streamSpec, streamReadState)
                 else -> logger.info { "Skipping ${streamSpec.table} with state $streamReadState." }
             }
         }
     }
 
-    private fun readStream(streamSpec: StreamSpec, readState: SelectableStreamReadState) {
+    private fun readStream(streamSpec: StreamSpec, readState: SelectableStreamState) {
         val rowToRecordData = RowToRecordData(sourceOperations, streamSpec)
         val conn: Connection = jdbcConnectionFactory.get()
         try {
@@ -92,25 +94,19 @@ class ReadOperation(
                     cursorValue = sourceOperations.cursorColumnValue(selectFrom, rs)
                     val row = sourceOperations.dataColumnValues(selectFrom, rs)
                     val recordData: JsonNode = rowToRecordData.apply(row)
-                    outputConsumer.accept(AirbyteMessage()
-                        .withType(AirbyteMessage.Type.RECORD)
-                        .withRecord(
-                            AirbyteRecordMessage()
-                                .withStream(selectFrom.streamDescriptor.name)
-                                .withNamespace(selectFrom.streamDescriptor.namespace)
-                                .withEmittedAt(emittedAt.toEpochMilli())
-                                .withData(recordData)))
+                    outputConsumer.accept(AirbyteRecordMessage()
+                            .withStream(selectFrom.streamDescriptor.name)
+                            .withNamespace(selectFrom.streamDescriptor.namespace)
+                            .withData(recordData))
                     rowCount++
                 }
-                outputConsumer.accept(AirbyteMessage()
-                    .withType(AirbyteMessage.Type.STATE)
-                    .withState(AirbyteStateMessage()
-                        .withType(AirbyteStateMessage.AirbyteStateType.STREAM)
-                        .withStream(AirbyteStreamState()
-                            .withStreamDescriptor(selectFrom.streamDescriptor)
-                            .withStreamState(streamState))
-                        .withSourceStats(AirbyteStateStats()
-                            .withRecordCount(rowCount.toDouble()))))
+                outputConsumer.accept(AirbyteStateMessage()
+                    .withType(AirbyteStateMessage.AirbyteStateType.STREAM)
+                    .withStream(AirbyteStreamState()
+                        .withStreamDescriptor(selectFrom.streamDescriptor)
+                        .withStreamState(streamState))
+                    .withSourceStats(AirbyteStateStats()
+                        .withRecordCount(rowCount.toDouble())))
             } finally {
                 stmt.close()
             }

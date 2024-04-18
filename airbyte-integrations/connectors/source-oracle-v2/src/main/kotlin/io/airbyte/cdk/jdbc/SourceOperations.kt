@@ -1,8 +1,7 @@
 package io.airbyte.cdk.jdbc
 
-import io.airbyte.cdk.read.CursorColumn
 import io.airbyte.cdk.read.DataColumn
-import io.airbyte.cdk.read.SelectableStreamReadState
+import io.airbyte.cdk.read.SelectableStreamState
 import io.airbyte.cdk.read.StreamSpec
 import java.sql.ResultSet
 
@@ -11,7 +10,7 @@ interface SourceOperations {
 
     fun selectFrom(
         streamSpec: StreamSpec,
-        readState: SelectableStreamReadState,
+        readState: SelectableStreamState,
     ): SqlQueryWithBindings
 
     data class SqlQueryWithBindings(val sql: String, val params: List<String>)

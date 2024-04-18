@@ -4,16 +4,11 @@
 
 package io.airbyte.integrations.source.oracle
 
-import io.airbyte.cdk.jdbc.ColumnMetadata
-import io.airbyte.cdk.jdbc.ColumnType
-import io.airbyte.cdk.jdbc.LeafType
 import io.airbyte.cdk.jdbc.SelectFrom
 import io.airbyte.cdk.jdbc.SourceOperations
-import io.airbyte.cdk.jdbc.TableName
-import io.airbyte.cdk.read.SelectableStreamReadState
+import io.airbyte.cdk.read.SelectableStreamState
 import io.airbyte.cdk.read.StreamSpec
 import jakarta.inject.Singleton
-import java.sql.JDBCType
 
 /**
  * Oracle-specific implementation of [SourceOperations].
@@ -23,7 +18,7 @@ class OracleSourceOperations : SourceOperations {
 
     override fun selectFrom(
         streamSpec: StreamSpec,
-        readState: SelectableStreamReadState
+        readState: SelectableStreamState
     ): SourceOperations.SqlQueryWithBindings {
         TODO("Not yet implemented")
     }

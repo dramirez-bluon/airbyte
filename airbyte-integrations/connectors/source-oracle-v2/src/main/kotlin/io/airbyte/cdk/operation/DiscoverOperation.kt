@@ -37,9 +37,7 @@ class DiscoverOperation(
         val airbyteStreams: List<AirbyteStream> = metadataQuerier.tableNames()
             .mapNotNull(::discoveredStream)
             .map { discoverMapper.airbyteStream(it) }
-        outputConsumer.accept(AirbyteMessage()
-            .withType(AirbyteMessage.Type.CATALOG)
-            .withCatalog(AirbyteCatalog().withStreams(airbyteStreams)))
+        outputConsumer.accept(AirbyteCatalog().withStreams(airbyteStreams))
     }
 
     override fun close() {

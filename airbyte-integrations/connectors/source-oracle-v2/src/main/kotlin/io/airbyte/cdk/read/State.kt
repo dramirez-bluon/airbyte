@@ -1,60 +1,74 @@
 package io.airbyte.cdk.read
 
+import com.fasterxml.jackson.databind.JsonNode
+import io.airbyte.cdk.command.GlobalStateValue
 import io.airbyte.cdk.command.StreamStateValue
 
-sealed interface StreamReadState
+sealed interface State<S : Spec>
+sealed interface SerializableState<S : Spec> : State<S>
+sealed interface SerializableGlobalState : SerializableState<GlobalSpec>
 
-sealed interface SelectableStreamReadState : StreamReadState
+data object CdcNotStarted : State<GlobalSpec>
 
-sealed interface SerializableStreamReadState : StreamReadState
+data class CdcStarting(val checkpointedCdcValue: JsonNode) : State<GlobalSpec>
 
-data object FullRefreshNotStarted : StreamReadState
+data class CdcOngoing(val checkpointedCdcValue: JsonNode) : SerializableGlobalState
 
-data object FullRefreshNonResumableStarting : StreamReadState, SelectableStreamReadState
+fun SerializableGlobalState.value(): GlobalStateValue = when (this) {
+    is CdcOngoing -> GlobalStateValue(this.checkpointedCdcValue)
+}
 
-data class FullRefreshResumableStarting(val primaryKey: List<DataColumn>) : StreamReadState, SelectableStreamReadState
+sealed interface SelectableStreamState : State<StreamSpec>
+
+sealed interface SerializableStreamState : SerializableState<StreamSpec>
+
+data object FullRefreshNotStarted : State<StreamSpec>
+
+data object FullRefreshNonResumableStarting : SelectableStreamState
+
+data class FullRefreshResumableStarting(val primaryKey: List<DataColumn>) : SelectableStreamState
 
 data class FullRefreshResumableOngoing(
     val primaryKey: List<DataColumn>,
     val checkpointedPrimaryKeyValues: List<String>,
-) : SerializableStreamReadState, SelectableStreamReadState
+) : SerializableStreamState, SelectableStreamState
 
-data object FullRefreshCompleted : SerializableStreamReadState
+data object FullRefreshCompleted : SerializableStreamState
 
-data object CursorBasedIncrementalNotStarted : StreamReadState
+data object CursorBasedIncrementalNotStarted : State<StreamSpec>
 
 data class CursorBasedIncrementalInitialSyncStarting(
     val primaryKey: List<DataColumn>,
     val cursor: CursorColumn,
     val initialCursorValue: String?,
-) : StreamReadState, SelectableStreamReadState
+) : SelectableStreamState
 
 data class CursorBasedIncrementalInitialSyncOngoing(
     val primaryKey: List<DataColumn>,
     val checkpointedPrimaryKeyValues: List<String>,
     val cursor: CursorColumn,
     val initialCursorValue: String?,
-) : SerializableStreamReadState, SelectableStreamReadState
+) : SerializableStreamState, SelectableStreamState
 
 data class CursorBasedIncrementalOngoing(
     val cursor: CursorColumn,
     val checkpointedCursorValue: String?,
-) : SerializableStreamReadState, SelectableStreamReadState
+) : SerializableStreamState, SelectableStreamState
 
-data object CdcInitialSyncNotStarted : StreamReadState
+data object CdcInitialSyncNotStarted : State<StreamSpec>
 
 data class CdcInitialSyncStarting(
     val primaryKey: List<DataColumn>,
-) : StreamReadState, SelectableStreamReadState
+) : SelectableStreamState
 
 data class CdcInitialSyncOngoing(
     val primaryKey: List<DataColumn>,
     val checkpointedPrimaryKeyValues: List<String>,
-) : SerializableStreamReadState, SelectableStreamReadState
+) : SerializableStreamState, SelectableStreamState
 
-data object CdcInitialSyncCompleted : SerializableStreamReadState
+data object CdcInitialSyncCompleted : SerializableStreamState
 
-fun SerializableStreamReadState.value(): StreamStateValue = when (this) {
+fun SerializableStreamState.value(): StreamStateValue = when (this) {
     is FullRefreshResumableOngoing -> StreamStateValue(
         primaryKey.map { it.metadata.label }.zip(checkpointedPrimaryKeyValues).toMap(),
         mapOf())
