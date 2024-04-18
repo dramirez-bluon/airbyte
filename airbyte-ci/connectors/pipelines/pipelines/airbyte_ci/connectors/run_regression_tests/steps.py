@@ -49,7 +49,7 @@ def get_test_steps(context: ConnectorContext) -> STEP_TREE:
         [
             StepToRun(
                 id=CONNECTOR_TEST_STEP_ID.REGRESSION_TEST_BUILD_TARGET,
-                step=BuildConnectorImagesTarget(context, docker_image_name=target_image),
+                step=BuildConnectorImagesTarget(context, docker_image_name=None if target_version == "dev" else target_image),
             )
         ],
         [

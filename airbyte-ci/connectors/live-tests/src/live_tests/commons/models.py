@@ -177,7 +177,7 @@ class ConnectorUnderTest:
         image_name: str,
         target_or_control: TargetOrControl,
     ) -> ConnectorUnderTest:
-        container = await get_connector_container(dagger_client, image_name)
+        container = await get_connector_container(dagger_client, image_name, target_or_control)
         return cls(image_name, container, target_or_control)
 
 
