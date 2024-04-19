@@ -30,7 +30,6 @@ class CONNECTOR_TEST_STEP_ID(str, Enum):
     CHECK_MIGRATION_CANDIDATE = "check_migration_candidate"
     POETRY_INIT = "poetry_init"
     DELETE_SETUP_PY = "delete_setup_py"
-    REGRESSION_TEST_BUILD_TARGET = "regression_test_build_target"
     REGRESSION_TESTS = "regression_tests"
 
     def __str__(self) -> str:
