@@ -5,16 +5,13 @@ import os
 import re
 import shutil
 from pathlib import Path
-from typing import TYPE_CHECKING, List, Optional
+from typing import List, Optional
 
 import dagger
 import docker  # type: ignore
 import pytest
 from mitmproxy import http, io  # type: ignore
 from mitmproxy.addons.savehar import SaveHar  # type: ignore
-
-if TYPE_CHECKING:
-    from live_tests.commons.models import TargetOrControl
 
 
 async def get_container_from_id(dagger_client: dagger.Client, container_id: str) -> dagger.Container:
@@ -86,7 +83,7 @@ async def get_container_from_dockerhub_image(dagger_client: dagger.Client, docke
         pytest.exit(f"Failed to import connector image from DockerHub: {e}")
 
 
-async def get_connector_container(dagger_client: dagger.Client, image_name_with_tag: str, target_or_control: "TargetOrControl") -> dagger.Container:
+async def get_connector_container(dagger_client: dagger.Client, image_name_with_tag: str) -> dagger.Container:
     """Get a dagger container for the connector image to test.
 
     Args:
@@ -99,7 +96,7 @@ async def get_connector_container(dagger_client: dagger.Client, image_name_with_
     # If a container_id.txt file is available, we'll use it to load the connector container
     # We use a txt file as container ids can be too long to be passed as env vars
     # It's used for dagger-in-dagger use case with airbyte-ci, when the connector container is built via an upstream dagger operation
-    container_id_path = Path(f"/tmp/{target_or_control.value}_container_id.txt")
+    container_id_path = Path(f"/tmp/container_id.txt")
     if container_id_path.exists():
         return await get_container_from_id(dagger_client, container_id_path.read_text())
 
