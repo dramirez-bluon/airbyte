@@ -21,12 +21,6 @@ from pipelines.helpers.utils import get_exec_result
 from pipelines.models.steps import STEP_PARAMS, Step, StepResult
 
 
-class BuildConnectorImagesTarget(BuildConnectorImages):
-    @property
-    def title(self):
-        return f"{super().title}: Target Container"
-
-
 class RegressionTests(Step):
     """A step to run regression tests for a connector."""
 
@@ -84,19 +78,18 @@ class RegressionTests(Step):
         self.pr_url = context.regression_test_pr_url
         self.should_read_with_state = context.should_read_with_state
 
-    async def _run(self, target_container: Container) -> StepResult:
+    async def _run(self, connector_under_test: Container) -> StepResult:
         """Run the regression test suite.
 
         Args:
-            target_container (Container): The container holding the target connector test image.
+            connector_under_test (Container): The container holding the target connector test image.
 
         Returns:
             StepResult: Failure or success of the regression tests with stdout and stderr.
         """
-        # TODO: use control & target containers
         live_tests_dir = self.context.live_tests_dir
         start_timestamp = int(time.time())
-        container = await self._build_regression_test_container(live_tests_dir, await target_container.id())
+        container = await self._build_regression_test_container(live_tests_dir, await connector_under_test.id())
         container = container.with_(hacks.never_fail_exec(self.regression_tests_command(start_timestamp)))
         regression_tests_artifacts_dir = str(self.regression_tests_artifacts_dir)
         await container.directory(regression_tests_artifacts_dir).export(regression_tests_artifacts_dir)
@@ -164,8 +157,8 @@ def get_test_steps(context: ConnectorContext) -> STEP_TREE:
     return [
         [
             StepToRun(
-                id=CONNECTOR_TEST_STEP_ID.REGRESSION_TEST_BUILD_TARGET,
-                step=BuildConnectorImagesTarget(context),
+                id=CONNECTOR_TEST_STEP_ID.BUILD,
+                step=BuildConnectorImages(context),
             )
         ],
         [
@@ -173,11 +166,11 @@ def get_test_steps(context: ConnectorContext) -> STEP_TREE:
                 id=CONNECTOR_TEST_STEP_ID.REGRESSION_TESTS,
                 step=RegressionTests(context),
                 args=lambda results: {
-                    "target_container": results[CONNECTOR_TEST_STEP_ID.REGRESSION_TEST_BUILD_TARGET].output[
+                    "connector_under_test": results[CONNECTOR_TEST_STEP_ID.BUILD].output[
                         LOCAL_BUILD_PLATFORM
                     ]
                 },
-                depends_on=[CONNECTOR_TEST_STEP_ID.REGRESSION_TEST_BUILD_TARGET],
+                depends_on=[CONNECTOR_TEST_STEP_ID.BUILD],
             )
         ],
     ]
