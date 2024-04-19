@@ -360,11 +360,10 @@ class RegressionTests(Step):
         self.pr_url = context.regression_test_pr_url
         self.should_read_with_state = context.should_read_with_state
 
-    async def _run(self, control_container: Container, target_container: Container) -> StepResult:
+    async def _run(self, target_container: Container) -> StepResult:
         """Run the regression test suite.
 
         Args:
-            control_container (Container): The container holding the control connector test image.
             target_container (Container): The container holding the target connector test image.
 
         Returns:
@@ -373,7 +372,7 @@ class RegressionTests(Step):
         # TODO: use control & target containers
         live_tests_dir = self.context.live_tests_dir
         start_timestamp = int(time.time())
-        container = await self._build_regression_test_container(live_tests_dir, await control_container.id(), await target_container.id())
+        container = await self._build_regression_test_container(live_tests_dir, await target_container.id())
         container = container.with_(hacks.never_fail_exec(self.regression_tests_command(start_timestamp)))
         regression_tests_artifacts_dir = str(self.context.regression_tests_artifacts_dir)
         await container.directory(regression_tests_artifacts_dir).export(regression_tests_artifacts_dir)
@@ -392,7 +391,7 @@ class RegressionTests(Step):
             report=regression_test_report,
         )
 
-    async def _build_regression_test_container(self, test_dir: Directory, control_container_id: str, target_container_id: str) -> Container:
+    async def _build_regression_test_container(self, test_dir: Directory, target_container_id: str) -> Container:
         """Create a container to run regression tests."""
         image = "python:3.10-slim"
 
@@ -429,8 +428,6 @@ class RegressionTests(Step):
         ).with_env_variable(
             "IS_AIRBYTE_CI", "true"
         ).with_new_file(
-            "/tmp/control_container_id.txt", contents=str(control_container_id)
-        ).with_new_file(
-            "/tmp/target_container_id.txt", contents=str(target_container_id)
+            "/tmp/container_id.txt", contents=str(target_container_id)
         )
         return container
