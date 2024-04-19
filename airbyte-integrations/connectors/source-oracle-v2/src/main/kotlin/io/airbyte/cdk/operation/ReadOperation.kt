@@ -52,12 +52,9 @@ class ReadOperation(
     val jdbcConnectionFactory: JdbcConnectionFactory,
     val outputConsumer: OutputConsumer,
     val validationHandler: CatalogValidationFailureHandler,
-    val clock: Clock
 ) : Operation, AutoCloseable {
 
     override val type = OperationType.READ
-
-    val emittedAt: Instant = Instant.now(clock)
 
     private val factory = StateManagerFactory(
         metadataQuerier,
@@ -68,6 +65,19 @@ class ReadOperation(
     override fun execute() {
         val stateManager: StateManager =
             factory.create(configSupplier.get(), catalogSupplier.get(), stateSupplier.get())
+        stateManager.get()
+        while (true) {
+
+            val checkpoints = stateManager.checkpoint()
+            if (checkpoints.isEmpty()) {
+                break
+            }
+            checkpoints.forEach(outputConsumer)
+        }
+
+        stateManager.visitAllStreams { streamSpec, state ->
+
+        }
         for ((streamSpec, streamReadState) in stateManager.getStreams()) {
             when (streamReadState) {
                 is SelectableStreamState -> readStream(streamSpec, streamReadState)

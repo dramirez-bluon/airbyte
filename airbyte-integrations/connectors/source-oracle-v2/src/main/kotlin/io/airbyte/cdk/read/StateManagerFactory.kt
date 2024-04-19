@@ -167,7 +167,7 @@ data class StateManagerFactory(
         readKind: ReadKind,
         spec: StreamSpec,
         stateValue: StreamStateValue?
-    ): StreamState {
+    ): State<StreamSpec> {
         if (stateValue == null) {
             return when (readKind) {
                 ReadKind.CDC -> startCdcInitialSync(spec)
@@ -187,7 +187,7 @@ data class StateManagerFactory(
             }
             keys.associateWith { stateValue.primaryKey[it.metadata.label]!! }
         }
-        val cursor: Pair<CursorColumn, String?>? = run {
+        val cursor: Pair<CursorColumn, String>? = run {
             if (readKind != ReadKind.CURSOR) {
                 return@run null
             }
@@ -203,7 +203,7 @@ data class StateManagerFactory(
                 validationHandler.invalidCursor(spec.name, spec.namespace, cursorLabel)
                 return@run null
             }
-            cursorColumn to stateValue.cursors[cursorLabel]
+            cursorColumn to stateValue.cursors[cursorLabel]!!
         }
         return when (readKind) {
             ReadKind.CDC ->
@@ -237,23 +237,26 @@ data class StateManagerFactory(
         }
     }
 
-    private fun startCdcInitialSync(spec: StreamSpec): StreamState =
+    private fun startCdcInitialSync(spec: StreamSpec): State<StreamSpec> =
         spec.pickedPrimaryKey
             ?.let { CdcInitialSyncStarting(it) }
             ?: CdcInitialSyncNotStarted
 
-    private fun startCursorBasedIncremental(spec: StreamSpec): StreamState {
+    private fun startCursorBasedIncremental(spec: StreamSpec): State<StreamSpec> {
         if (spec.pickedCursor == null || spec.pickedPrimaryKey == null) {
             return CursorBasedIncrementalNotStarted
         }
+        val cursorValue: String =
+            metadataQuerier.maxCursorValue(spec.table, spec.pickedCursor.name)
+                ?: return CursorBasedIncrementalNotStarted
         return CursorBasedIncrementalInitialSyncStarting(
             spec.pickedPrimaryKey,
             spec.pickedCursor,
-            metadataQuerier.maxCursorValue(spec.table, spec.pickedCursor.name),
+            cursorValue,
         )
     }
 
-    private fun startFullRefresh(spec: StreamSpec): StreamState =
+    private fun startFullRefresh(spec: StreamSpec): State<StreamSpec> =
         spec.pickedPrimaryKey
             ?.let { FullRefreshResumableStarting(it) }
             ?: FullRefreshNonResumableStarting

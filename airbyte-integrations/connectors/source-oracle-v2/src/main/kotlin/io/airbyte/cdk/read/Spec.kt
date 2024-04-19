@@ -6,6 +6,7 @@ import io.airbyte.cdk.jdbc.TableName
 import io.airbyte.protocol.models.v0.AirbyteStream
 import io.airbyte.protocol.models.v0.AirbyteStreamNameNamespacePair
 import io.airbyte.protocol.models.v0.ConfiguredAirbyteStream
+import io.airbyte.protocol.models.v0.StreamDescriptor
 import io.airbyte.protocol.models.v0.SyncMode
 
 
@@ -34,6 +35,9 @@ data class StreamSpec(
 
     val namePair: AirbyteStreamNameNamespacePair =
         AirbyteStreamNameNamespacePair.fromConfiguredAirbyteSteam(configuredStream)
+
+    val streamDescriptor: StreamDescriptor =
+        StreamDescriptor().withName(name).withNamespace(namespace)
 
     val pickedPrimaryKey: List<DataColumn>? =
         configuredPrimaryKey ?: primaryKeyCandidates.firstOrNull()
