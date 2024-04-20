@@ -4,7 +4,13 @@ import io.airbyte.cdk.consumers.OutputConsumer
 import io.airbyte.cdk.jdbc.SourceOperations
 import io.airbyte.protocol.models.v0.AirbyteStateMessage
 import io.github.oshai.kotlinlogging.KotlinLogging
+import java.time.Duration
 import java.util.concurrent.Callable
+import java.util.concurrent.ExecutorService
+import java.util.concurrent.Executors
+import java.util.concurrent.Future
+import java.util.concurrent.TimeUnit
+import java.util.concurrent.TimeoutException
 
 interface Worker<
     S : Spec,
@@ -14,6 +20,8 @@ interface Worker<
 
     val ctx: ThreadSafeWorkerContext
     val input: I
+
+    fun signalStop()
 }
 
 data class WorkResult<S : Spec, I : SelectableState<S>, O : SerializableState<S>>(
@@ -23,6 +31,7 @@ data class WorkResult<S : Spec, I : SelectableState<S>, O : SerializableState<S>
 )
 
 data class ThreadSafeWorkerContext(
+    val timeout: Duration,
     val sourceOperations: SourceOperations,
     val outputConsumer: OutputConsumer,
 )
@@ -33,37 +42,44 @@ class WorkerRunner(
     private var state: State<out Spec>,
 ) : Runnable {
 
+    val name: String = "worker-" + when (val spec = state.spec) {
+        is GlobalSpec -> "global"
+        is StreamSpec -> spec.namePair.toString()
+    }
+
     private val logger = KotlinLogging.logger {}
+
+    private val ex: ExecutorService = Executors.newSingleThreadExecutor { Thread(it, name) }
 
     override fun run() {
         while (true) {
-            logger.info { "processing state $state" }
+            logger.info { "$name: processing state $state" }
             val worker: Worker<*,*,*> = when (val input: State<out Spec> = state) {
-                is CdcStarting ->
-                    CdcWorker(ctx, input)
-                is CdcOngoing ->
-                    CdcWorker(ctx, input)
-                is FullRefreshNonResumableStarting ->
-                    NonResumableSelectWorker(ctx, input)
-                is InitialSync ->
-                    ResumableSelectWorker(ctx, input)
-                is CursorBasedIncrementalOngoing ->
-                    ResumableSelectWorker(ctx, input)
+                is CdcWorkPending -> CdcWorker(ctx, input)
+                is NonResumableSelectWorkPending -> NonResumableSelectWorker(ctx, input)
+                is ResumableSelectWorkPending -> ResumableSelectWorker(ctx, input)
                 else -> break
             }
-            logger.info { "calling $worker" }
-            val workResult: WorkResult<*,*,*> = worker.call()
-            logger.info { "${workResult.numRecords} produced by $worker" }
-            when (workResult.output) {
-                is GlobalState -> stateManager.set(workResult.output, workResult.numRecords)
-                is StreamState -> stateManager.set(workResult.output, workResult.numRecords)
+            logger.info { "$name: calling ${worker.javaClass.simpleName}" }
+            val future: Future<out WorkResult<*,*,*>> = ex.submit(worker)
+            val result: WorkResult<*,*,*> = try {
+                future.get(ctx.timeout.toMillis(), TimeUnit.MILLISECONDS)
+            } catch (_: TimeoutException) {
+                logger.info { "$name: ${worker.javaClass.simpleName} soft timeout" }
+                worker.signalStop()
+                future.get()
+            }
+            logger.info { "$name: ${result.numRecords} produced by $worker" }
+            when (result.output) {
+                is GlobalState -> stateManager.set(result.output, result.numRecords)
+                is StreamState -> stateManager.set(result.output, result.numRecords)
             }
             val checkpoint: List<AirbyteStateMessage> = stateManager.checkpoint()
-            logger.info { "checkpoint of ${checkpoint.size} state message(s)" }
+            logger.info { "$name: checkpoint of ${checkpoint.size} state message(s)" }
             checkpoint.forEach(ctx.outputConsumer::accept)
-            state = workResult.output
+            state = result.output
         }
-        logger.info { "reached terminal state $state." }
+        logger.info { "$name: reached terminal state $state." }
     }
 
 }

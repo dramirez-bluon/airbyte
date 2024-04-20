@@ -1,18 +1,30 @@
 package io.airbyte.cdk.read
 
+import com.fasterxml.jackson.databind.JsonNode
 import io.github.oshai.kotlinlogging.KotlinLogging
+import java.util.concurrent.atomic.AtomicBoolean
 
 
-class CdcWorker<I>(
+class CdcWorker(
     override val ctx: ThreadSafeWorkerContext,
-    override val input: I,
-) : Worker<GlobalSpec, I, SerializableGlobalState>
-    where I : SelectableGlobalState, I : CdcWorkPending, I : CdcCheckpointing {
+    override val input: CdcWorkPending,
+) : Worker<GlobalSpec, CdcWorkPending, SerializableGlobalState> {
 
     private val logger = KotlinLogging.logger {}
 
-    override fun call(): WorkResult<GlobalSpec, I, out SerializableGlobalState> {
+    private val flag = AtomicBoolean()
+
+    override fun signalStop() {
+        flag.set(true)
+    }
+
+    override fun call(): WorkResult<GlobalSpec, CdcWorkPending, out SerializableGlobalState> {
+        val cdcValue: JsonNode = when (input) {
+            is CdcStarting -> input.checkpointedCdcValue
+            is CdcOngoing -> input.checkpointedCdcValue
+        }
+
         // TODO
-        return WorkResult(input, CdcCompleted(input.spec, input.checkpointedCdcValue), 0L)
+        return WorkResult(input, CdcCompleted(input.spec, cdcValue), 0L)
     }
 }

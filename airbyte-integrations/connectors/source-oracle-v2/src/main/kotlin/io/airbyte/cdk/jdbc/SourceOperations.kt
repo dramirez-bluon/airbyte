@@ -1,6 +1,9 @@
 package io.airbyte.cdk.jdbc
 
 import io.airbyte.cdk.read.DataColumn
+import io.airbyte.cdk.read.NonResumableSelectWorkPending
+import io.airbyte.cdk.read.NonResumableSelectWorker
+import io.airbyte.cdk.read.ResumableSelectWorkPending
 import io.airbyte.cdk.read.SelectableStreamState
 import io.airbyte.cdk.read.StreamSpec
 import java.sql.ResultSet
@@ -8,9 +11,9 @@ import java.sql.ResultSet
 /** Database-specific query builders and type mappers. */
 interface SourceOperations {
 
-    fun selectFrom(
-        readState: SelectableStreamState,
-    ): SqlQueryWithBindings
+    fun selectFrom(state: NonResumableSelectWorkPending): String
+
+    fun selectFrom(state: ResumableSelectWorkPending): SqlQueryWithBindings
 
     data class SqlQueryWithBindings(val sql: String, val params: List<String>)
 
