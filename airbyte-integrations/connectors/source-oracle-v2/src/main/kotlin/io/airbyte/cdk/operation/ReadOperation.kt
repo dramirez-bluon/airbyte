@@ -21,6 +21,8 @@ import io.airbyte.cdk.read.StateManagerFactory
 import io.airbyte.cdk.read.SelectableStreamState
 import io.airbyte.cdk.read.StateManager
 import io.airbyte.cdk.read.StreamSpec
+import io.airbyte.cdk.read.ThreadSafeWorkerContext
+import io.airbyte.cdk.read.WorkerRunner
 import io.airbyte.protocol.models.v0.AirbyteMessage
 import io.airbyte.protocol.models.v0.AirbyteRecordMessage
 import io.airbyte.protocol.models.v0.AirbyteStateMessage
@@ -32,8 +34,6 @@ import jakarta.inject.Singleton
 import java.sql.Connection
 import java.sql.PreparedStatement
 import java.sql.ResultSet
-import java.time.Clock
-import java.time.Instant
 
 private val logger = KotlinLogging.logger {}
 
@@ -63,26 +63,14 @@ class ReadOperation(
     )
 
     override fun execute() {
+        val ctx = ThreadSafeWorkerContext(
+            sourceOperations,
+            outputConsumer
+        )
         val stateManager: StateManager =
             factory.create(configSupplier.get(), catalogSupplier.get(), stateSupplier.get())
-        stateManager.get()
-        while (true) {
-
-            val checkpoints = stateManager.checkpoint()
-            if (checkpoints.isEmpty()) {
-                break
-            }
-            checkpoints.forEach(outputConsumer)
-        }
-
-        stateManager.visitAllStreams { streamSpec, state ->
-
-        }
-        for ((streamSpec, streamReadState) in stateManager.getStreams()) {
-            when (streamReadState) {
-                is SelectableStreamState -> readStream(streamSpec, streamReadState)
-                else -> logger.info { "Skipping ${streamSpec.table} with state $streamReadState." }
-            }
+        for (input in stateManager.get()) {
+            WorkerRunner(ctx, stateManager, input).run()
         }
     }
 

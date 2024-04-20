@@ -58,10 +58,10 @@ data class StateManagerFactory(
         val globalSpec = GlobalSpec(streamSpecs)
         return StateManager(
             initialGlobal = when (inputState) {
-                is GlobalInputState -> globalSpec to CdcOngoing(inputState.global.cdc)
-                else -> if (isGlobal) globalSpec to startCdc(globalSpec) else null
+                is GlobalInputState -> CdcOngoing(globalSpec, inputState.global.cdc)
+                else -> if (isGlobal) startCdc(globalSpec) else null
             },
-            initialStreams = streamSpecs.associateWith { streamSpec: StreamSpec ->
+            initialStreams = streamSpecs.map { streamSpec: StreamSpec ->
                 val cs: ConfiguredAirbyteStream =
                         configuredCatalog.streams.find { it.stream == streamSpec.stream }!!
                 val readKind: ReadKind = when (cs.syncMode) {
@@ -160,7 +160,7 @@ data class StateManagerFactory(
 
     private fun startCdc(spec: GlobalSpec): State<GlobalSpec> {
         // TODO: add CDC support.
-        return CdcStarting(Jsons.emptyObject())
+        return CdcStarting(spec, Jsons.emptyObject())
     }
 
     private fun buildStreamReadState(
@@ -211,9 +211,9 @@ data class StateManagerFactory(
                     validationHandler.resetStream(spec.name, spec.namespace)
                     startCdcInitialSync(spec)
                 } else if (pk.isNotEmpty()) {
-                    CdcInitialSyncOngoing(pk.keys.toList(), pk.values.toList())
+                    CdcInitialSyncOngoing(spec, pk.keys.toList(), pk.values.toList())
                 } else {
-                    CdcInitialSyncCompleted
+                    CdcInitialSyncCompleted(spec)
                 }
             ReadKind.CURSOR ->
                 if (cursor == null || pk == null) {
@@ -221,35 +221,36 @@ data class StateManagerFactory(
                     startCursorBasedIncremental(spec)
                 } else if (pk.isNotEmpty()) {
                     CursorBasedIncrementalInitialSyncOngoing(
-                        pk.keys.toList(), pk.values.toList(), cursor.first, cursor.second)
+                        spec, pk.keys.toList(), pk.values.toList(), cursor.first, cursor.second)
                 } else {
-                    CursorBasedIncrementalOngoing(cursor.first, cursor.second)
+                    CursorBasedIncrementalOngoing(spec, cursor.first, cursor.second)
                 }
             ReadKind.FULL_REFRESH ->
                 if (pk == null) {
                     validationHandler.resetStream(spec.name, spec.namespace)
                     startFullRefresh(spec)
                 } else if (pk.isNotEmpty()) {
-                    FullRefreshResumableOngoing(pk.keys.toList(), pk.values.toList())
+                    FullRefreshResumableOngoing(spec, pk.keys.toList(), pk.values.toList())
                 } else {
-                    FullRefreshCompleted
+                    FullRefreshCompleted(spec)
                 }
         }
     }
 
     private fun startCdcInitialSync(spec: StreamSpec): State<StreamSpec> =
         spec.pickedPrimaryKey
-            ?.let { CdcInitialSyncStarting(it) }
-            ?: CdcInitialSyncNotStarted
+            ?.let { CdcInitialSyncStarting(spec, it) }
+            ?: CdcInitialSyncNotStarted(spec)
 
     private fun startCursorBasedIncremental(spec: StreamSpec): State<StreamSpec> {
         if (spec.pickedCursor == null || spec.pickedPrimaryKey == null) {
-            return CursorBasedIncrementalNotStarted
+            return CursorBasedIncrementalNotStarted(spec)
         }
         val cursorValue: String =
             metadataQuerier.maxCursorValue(spec.table, spec.pickedCursor.name)
-                ?: return CursorBasedIncrementalNotStarted
+                ?: return CursorBasedIncrementalNotStarted(spec)
         return CursorBasedIncrementalInitialSyncStarting(
+            spec,
             spec.pickedPrimaryKey,
             spec.pickedCursor,
             cursorValue,
@@ -258,8 +259,8 @@ data class StateManagerFactory(
 
     private fun startFullRefresh(spec: StreamSpec): State<StreamSpec> =
         spec.pickedPrimaryKey
-            ?.let { FullRefreshResumableStarting(it) }
-            ?: FullRefreshNonResumableStarting
+            ?.let { FullRefreshResumableStarting(spec, it) }
+            ?: FullRefreshNonResumableStarting(spec)
 
     private enum class ReadKind { CURSOR, CDC, FULL_REFRESH }
 }

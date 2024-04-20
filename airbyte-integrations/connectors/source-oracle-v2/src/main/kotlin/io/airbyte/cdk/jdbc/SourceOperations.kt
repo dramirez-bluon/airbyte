@@ -9,7 +9,6 @@ import java.sql.ResultSet
 interface SourceOperations {
 
     fun selectFrom(
-        streamSpec: StreamSpec,
         readState: SelectableStreamState,
     ): SqlQueryWithBindings
 

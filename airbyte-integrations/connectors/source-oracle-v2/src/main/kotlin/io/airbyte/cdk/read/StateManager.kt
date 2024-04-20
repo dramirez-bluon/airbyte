@@ -5,66 +5,68 @@ import io.airbyte.commons.json.Jsons
 import io.airbyte.protocol.models.v0.AirbyteGlobalState
 import io.airbyte.protocol.models.v0.AirbyteStateMessage
 import io.airbyte.protocol.models.v0.AirbyteStateStats
+import io.airbyte.protocol.models.v0.AirbyteStreamNameNamespacePair
 import io.airbyte.protocol.models.v0.AirbyteStreamState
 
+private typealias StreamKey = AirbyteStreamNameNamespacePair
+
 class StateManager(
-    initialGlobal: Pair<GlobalSpec, State<GlobalSpec>>?,
-    initialStreams: Map<StreamSpec, State<StreamSpec>>,
-) {
+    initialGlobal: State<GlobalSpec>?,
+    initialStreams: Collection<State<StreamSpec>>,
+)  {
 
     private val global: GlobalStateManager?
-    private val nonGlobal: Map<StreamSpec, NonGlobalStreamStateManager>
+    private val nonGlobal: Map<StreamKey, NonGlobalStreamStateManager>
 
     init {
+        val streamMap: Map<StreamKey, State<StreamSpec>> =
+            initialStreams.associateBy { it.spec.namePair }
         if (initialGlobal == null) {
             global = null
-            nonGlobal = initialStreams.mapValues { NonGlobalStreamStateManager(it.key, it.value) }
+            nonGlobal = streamMap.mapValues { NonGlobalStreamStateManager(it.value) }
         } else {
-            val globalStreams: Map<StreamSpec, State<StreamSpec>> =
-                initialGlobal.first.streamSpecs.associateWith { initialStreams[it]!! }
+            val globalStreams: Map<StreamKey, State<StreamSpec>> = initialGlobal.spec.streamSpecs
+                .mapNotNull { streamMap[it.namePair] }
+                .associateBy { it.spec.namePair }
             global = GlobalStateManager(
-                globalSpec = initialGlobal.first,
-                initialGlobalState = initialGlobal.second,
-                initialStreamStates = globalStreams)
-            nonGlobal = initialStreams
+                initialGlobalState = initialGlobal,
+                initialStreamStates = globalStreams.values)
+            nonGlobal = streamMap
                 .filterKeys { !globalStreams.containsKey(it) }
-                .mapValues { NonGlobalStreamStateManager(it.key, it.value) }
+                .mapValues { NonGlobalStreamStateManager(it.value) }
         }
     }
 
-    fun get(): List<WorkSpec<out Spec,*>> =
-        listOfNotNull(global?.workSpec()) +
-            (global?.streamStateManagers?.values ?: listOf()).mapNotNull { it.workSpec() } +
-            nonGlobal.values.mapNotNull { it.workSpec() }
+    fun get(): List<State<out Spec>> =
+        listOfNotNull(global?.state()) +
+            (global?.streamStateManagers?.values ?: listOf()).map { it.state() } +
+            nonGlobal.values.map { it.state() }
 
-    fun <S : Spec, I : SelectableState<S>, O : SerializableState<S>> set(wr: WorkResult<S, I, O>) {
-        when (wr.output) {
-            is SerializableGlobalState -> global?.set(wr.output, wr.numRecords)
-            is SerializableStreamState -> {
-                val streamSpec: StreamSpec = wr.workSpec.spec as StreamSpec
-                global?.streamStateManagers?.get(streamSpec)?.set(wr.output, wr.numRecords)
-                nonGlobal[streamSpec]?.set(wr.output, wr.numRecords)
-            }
-        }
+    fun set(state: GlobalState, numRecords: Long) {
+        global?.set(state, numRecords)
+    }
+
+    fun set(state: StreamState, numRecords: Long) {
+        global?.streamStateManagers?.get(state.spec.namePair)?.set(state, numRecords)
+        nonGlobal[state.spec.namePair]?.set(state, numRecords)
     }
 
     fun checkpoint(): List<AirbyteStateMessage> =
         listOfNotNull(global?.checkpoint()) + nonGlobal.mapNotNull {it.value.checkpoint() }
 
     private sealed class BaseStateManager<S : Spec>(
-        val spec: S,
         initialState: State<S>,
         private val isCheckpointUnique: Boolean = true
     ) {
+
+        val spec: S = initialState.spec
+
         private var current: State<S> = initialState
         private var pending: State<S> = initialState
         private var pendingNumRecords: Long = 0L
 
-        fun workSpec(): WorkSpec<S,*>? =
-            when (val state: State<S> = synchronized(this) { current }) {
-                is SelectableState<S> -> WorkSpec(spec, state)
-                else -> null
-            }
+        fun state(): State<S> =
+            synchronized(this) { current }
 
         fun set(state: State<S>, numRecords: Long) {
             synchronized(this) {
@@ -90,15 +92,12 @@ class StateManager(
     }
 
     private class GlobalStateManager(
-        globalSpec: GlobalSpec,
         initialGlobalState: State<GlobalSpec>,
-        initialStreamStates: Map<StreamSpec, State<StreamSpec>>
-    ) : BaseStateManager<GlobalSpec>(globalSpec, initialGlobalState) {
+        initialStreamStates: Collection<State<StreamSpec>>
+    ) : BaseStateManager<GlobalSpec>(initialGlobalState) {
 
-        val streamStateManagers: Map<StreamSpec, GlobalStreamStateManager> =
-            initialStreamStates.mapValues { (spec, state) ->
-                GlobalStreamStateManager(spec, state)
-            }
+        val streamStateManagers: Map<StreamKey, GlobalStreamStateManager> =
+            initialStreamStates.associate { it.spec.namePair to  GlobalStreamStateManager(it) }
 
         fun checkpoint(): AirbyteStateMessage? {
             val (state: SerializableState<GlobalSpec>, numRecords: Long) = swap() ?: return null
@@ -120,9 +119,8 @@ class StateManager(
     }
 
     private class GlobalStreamStateManager(
-        streamSpec: StreamSpec,
         initialState: State<StreamSpec>
-    ) : BaseStateManager<StreamSpec>(streamSpec, initialState, isCheckpointUnique = false) {
+    ) : BaseStateManager<StreamSpec>(initialState, isCheckpointUnique = false) {
 
         fun checkpointGlobalStream(): Pair<AirbyteStreamState, Long> {
             val (state: SerializableState<StreamSpec>?, numRecords: Long) = swap() ?: (null to 0L)
@@ -135,9 +133,8 @@ class StateManager(
 
 
     private class NonGlobalStreamStateManager(
-        streamSpec: StreamSpec,
         initialState: State<StreamSpec>
-    ) : BaseStateManager<StreamSpec>(streamSpec, initialState) {
+    ) : BaseStateManager<StreamSpec>(initialState) {
 
         fun checkpoint(): AirbyteStateMessage? {
             val (state: SerializableState<StreamSpec>, numRecords: Long) = swap() ?: return null
@@ -151,4 +148,5 @@ class StateManager(
         }
     }
 }
+
 
