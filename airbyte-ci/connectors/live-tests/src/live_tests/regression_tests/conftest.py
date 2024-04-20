@@ -81,12 +81,12 @@ def pytest_addoption(parser: Parser) -> None:
 
 def pytest_configure(config: Config) -> None:
     user_email = get_user_email()
-    config.stash[stash_keys.IS_AIRBYTE_CI] = os.getenv("IS_AIRBYTE_CI", False)
+    config.stash[stash_keys.RUN_IN_AIRBYTE_CI] = os.getenv("RUN_IN_AIRBYTE_CI", False)
     config.stash[stash_keys.IS_PRODUCTION_CI] = os.getenv("CI", False)
 
     track_usage(
         "production-ci" if config.stash[stash_keys.IS_PRODUCTION_CI] else
-        "local-ci" if config.stash[stash_keys.IS_AIRBYTE_CI] else
+        "local-ci" if config.stash[stash_keys.RUN_IN_AIRBYTE_CI] else
         user_email, vars(config.option)
     )
     config.stash[stash_keys.AIRBYTE_API_KEY] = get_airbyte_api_key()
@@ -116,7 +116,7 @@ def pytest_configure(config: Config) -> None:
     custom_state_path = config.getoption("--state-path")
 
     _should_read_with_state = config.getoption("--should-read-with-state")
-    if config.stash[stash_keys.IS_AIRBYTE_CI]:
+    if config.stash[stash_keys.RUN_IN_AIRBYTE_CI]:
         assert _should_read_with_state is not None
     if _should_read_with_state is not None:
         config.stash[stash_keys.SHOULD_READ_WITH_STATE] = _should_read_with_state
@@ -183,19 +183,20 @@ def pytest_terminal_summary(terminalreporter: SugarTerminalReporter, exitstatus:
         f"All tests artifacts for this sessions should be available in {config.stash[stash_keys.TEST_ARTIFACT_DIRECTORY].resolve()}"
     )
 
-    # try:  # TODO - handle CI case
-    #     Prompt.ask(
-    #         textwrap.dedent(
-    #             """
-    #         Test artifacts will be destroyed after this prompt.
-    #         Press enter when you're done reading them.
-    #         🚨 Do not copy them elsewhere on your disk!!! 🚨
-    #         """
-    #         )
-    #     )
-    # finally:
-    # clean_up_artifacts(MAIN_OUTPUT_DIRECTORY, LOGGER)
+    if not config.stash[stash_keys.RUN_IN_AIRBYTE_CI]:
+        try:
 
+                Prompt.ask(
+                    textwrap.dedent(
+                        """
+                    Test artifacts will be destroyed after this prompt.
+                    Press enter when you're done reading them.
+                    🚨 Do not copy them elsewhere on your disk!!! 🚨
+                    """
+                    )
+                )
+        finally:
+            clean_up_artifacts(MAIN_OUTPUT_DIRECTORY, LOGGER)
 
 def pytest_keyboard_interrupt(excinfo: Exception) -> None:
     LOGGER.error("Test execution was interrupted by the user. Cleaning up test artifacts.")
