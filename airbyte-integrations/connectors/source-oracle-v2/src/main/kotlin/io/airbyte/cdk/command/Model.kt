@@ -1,14 +1,12 @@
 package io.airbyte.cdk.command
 
-import com.fasterxml.jackson.annotation.JsonIgnore
 import com.fasterxml.jackson.annotation.JsonProperty
 import com.fasterxml.jackson.databind.JsonNode
 import io.airbyte.cdk.ssh.SshConnectionOptions
 import io.airbyte.cdk.ssh.SshTunnelMethodConfiguration
-import io.airbyte.protocol.models.v0.AirbyteStateMessage
 import io.airbyte.protocol.models.v0.AirbyteStreamNameNamespacePair
 import io.airbyte.protocol.models.v0.ConfiguredAirbyteCatalog
-import io.airbyte.protocol.models.v0.SyncMode
+import java.time.Duration
 import java.util.function.Supplier
 
 
@@ -49,12 +47,15 @@ sealed interface ConnectorConfiguration {
     val realPort: Int
     val sshTunnel: SshTunnelMethodConfiguration
     val sshConnectionOptions: SshConnectionOptions
+
+    val workerConcurrency: Int
+    val workUnitSoftTimeout: Duration
 }
 
 /** Subtype of [ConnectorConfiguration] for sources. */
 interface SourceConnectorConfiguration : ConnectorConfiguration {
 
-    val expectedStateType: AirbyteStateMessage.AirbyteStateType
+    val global: Boolean
 
     val jdbcUrlFmt: String
     val jdbcProperties: Map<String, String>
@@ -67,29 +68,26 @@ interface ConnectorConfigurationSupplier<T : ConnectorConfiguration> : Supplier<
 interface ConfiguredAirbyteCatalogSupplier : Supplier<ConfiguredAirbyteCatalog>
 
 data class StreamStateValue(
-    @JsonProperty("primary_keys") val primaryKey: Map<String, String>,
-    @JsonProperty("cursors") val cursors: Map<String, String?>,
+    @JsonProperty("primary_key") val primaryKey: Map<String, String> = mapOf(),
+    @JsonProperty("cursors") val cursors: Map<String, String> = mapOf(),
 )
 
 data class GlobalStateValue(
     @JsonProperty("cdc") val cdc: JsonNode
 )
 
-sealed interface InputState {
-    val stream: Map<AirbyteStreamNameNamespacePair, StreamStateValue>
-}
+sealed interface InputState
 
-data object EmptyInputState : InputState {
-    override val stream: Map<AirbyteStreamNameNamespacePair, StreamStateValue> = mapOf()
-}
+data object EmptyInputState : InputState
 
 data class GlobalInputState(
     val global: GlobalStateValue,
-    override val stream: Map<AirbyteStreamNameNamespacePair, StreamStateValue>
+    val globalStreams: Map<AirbyteStreamNameNamespacePair, StreamStateValue>,
+    val nonGlobalStreams: Map<AirbyteStreamNameNamespacePair, StreamStateValue>,
 ) : InputState
 
 data class StreamInputState(
-    override val stream: Map<AirbyteStreamNameNamespacePair, StreamStateValue>
+    val streams: Map<AirbyteStreamNameNamespacePair, StreamStateValue>
 ) : InputState
 
 interface ConnectorInputStateSupplier : Supplier<InputState>

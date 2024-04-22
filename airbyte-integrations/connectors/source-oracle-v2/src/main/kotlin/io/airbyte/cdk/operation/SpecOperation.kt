@@ -6,7 +6,6 @@ package io.airbyte.cdk.operation
 
 import io.airbyte.cdk.command.ConnectorConfigurationJsonObjectSupplier
 import io.airbyte.cdk.consumers.OutputConsumer
-import io.airbyte.protocol.models.v0.AirbyteMessage
 import io.airbyte.protocol.models.v0.ConnectorSpecification
 import io.github.oshai.kotlinlogging.KotlinLogging
 import io.micronaut.context.annotation.Requires

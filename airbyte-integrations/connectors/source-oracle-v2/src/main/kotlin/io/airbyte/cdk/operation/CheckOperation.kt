@@ -12,7 +12,6 @@ import io.airbyte.cdk.jdbc.MetadataQuerier
 import io.airbyte.cdk.jdbc.TableName
 import io.airbyte.protocol.models.v0.AirbyteConnectionStatus
 import io.airbyte.protocol.models.v0.AirbyteErrorTraceMessage
-import io.airbyte.protocol.models.v0.AirbyteMessage
 import io.airbyte.protocol.models.v0.AirbyteTraceMessage
 import io.github.oshai.kotlinlogging.KotlinLogging
 import io.micronaut.context.annotation.Requires
@@ -26,9 +25,9 @@ private val logger = KotlinLogging.logger {}
 @Requires(property = CONNECTOR_OPERATION, value = "check")
 class CheckOperation(
     val configSupplier: ConnectorConfigurationSupplier<SourceConnectorConfiguration>,
-    val metadataQuerier: MetadataQuerier,
+    val metadataQuerierFactory: MetadataQuerier.SessionFactory,
     val outputConsumer: OutputConsumer,
-) : Operation, AutoCloseable {
+) : Operation {
 
     override val type = OperationType.CHECK
 
@@ -70,10 +69,6 @@ class CheckOperation(
             .withStatus(AirbyteConnectionStatus.Status.SUCCEEDED))
     }
 
-    override fun close() {
-        metadataQuerier.close()
-    }
-
     /**
      * Checks the validity of the provided config:
      * - by completely parsing it,
@@ -85,25 +80,27 @@ class CheckOperation(
         logger.info { "Validating config internal consistency." }
         configSupplier.get()
         logger.info { "Connecting for config check, querying all table names in config schemas." }
-        val tableNames: List<TableName> = metadataQuerier.tableNames()
-        logger.info { "Discovered ${tableNames.size} table(s)." }
-        for (table in tableNames) {
-            try {
-                metadataQuerier.columnMetadata(table)
-            } catch (e: SQLException) {
-                logger.info {
-                    "Query failed with code ${e.errorCode}, SQLState ${e.sqlState};" +
-                        " will try to query another table instead."
+        metadataQuerierFactory.get().use { metadataQuerier: MetadataQuerier ->
+            val tableNames: List<TableName> = metadataQuerier.tableNames()
+            logger.info { "Discovered ${tableNames.size} table(s)." }
+            for (table in tableNames) {
+                try {
+                    metadataQuerier.columnMetadata(table)
+                } catch (e: SQLException) {
+                    logger.info {
+                        "Query failed with code ${e.errorCode}, SQLState ${e.sqlState};" +
+                            " will try to query another table instead."
+                    }
+                    logger.debug(e) {
+                        "Config check column metadata query for $table failed with exception."
+                    }
+                    continue
                 }
-                logger.debug(e) {
-                    "Config check column metadata query for $table failed with exception."
-                }
-                continue
+                logger.info { "Query successful." }
+                return
             }
-            logger.info { "Query successful." }
-            return
+            throw RuntimeException("Unable to query any of the discovered table(s): $tableNames")
         }
-        throw RuntimeException("Unable to query any of the discovered table(s): $tableNames")
     }
 
     companion object {

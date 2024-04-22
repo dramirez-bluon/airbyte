@@ -22,6 +22,7 @@ import java.nio.charset.StandardCharsets
 import java.security.KeyStore
 import java.security.cert.Certificate
 import java.security.cert.CertificateFactory
+import java.time.Duration
 import org.apache.commons.lang3.RandomStringUtils
 import org.bouncycastle.util.io.pem.PemReader
 
@@ -38,12 +39,11 @@ data class OracleSourceConfiguration(
     val defaultSchema: String,
     override val schemas: List<String>,
     val cursorConfiguration: CursorConfiguration,
+    override val workerConcurrency: Int = 1,
+    override val workUnitSoftTimeout: Duration = Duration.ZERO,
 ) : SourceConnectorConfiguration {
 
-    override val expectedStateType = when (cursorConfiguration) {
-        is CdcCursor -> AirbyteStateMessage.AirbyteStateType.GLOBAL
-        else -> AirbyteStateMessage.AirbyteStateType.STREAM
-    }
+    override val global = cursorConfiguration is CdcCursor
 }
 
 /** Factory for [OracleSourceConfiguration] using [OracleSourceConfigurationJsonObject]. */

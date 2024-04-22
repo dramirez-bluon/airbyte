@@ -82,9 +82,6 @@ class OracleSourceDiscoverMapper(
             else -> false
         }
 
-    override fun selectMaxCursorValue(table: TableName, cursorColumnLabel: String): String =
-        "SELECT MAX($cursorColumnLabel) FROM ${table.fullyQualifiedName()}"
-
     private fun TableName.fullyQualifiedName(): String =
         if (schema == null) name else "${schema}.${name}"
 

@@ -1,6 +1,5 @@
 package io.airbyte.cdk.jdbc
 
-import io.airbyte.protocol.models.v0.StreamDescriptor
 import java.sql.JDBCType
 
 

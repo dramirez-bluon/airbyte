@@ -1,6 +1,10 @@
 package io.airbyte.cdk.read
 
 import com.fasterxml.jackson.databind.JsonNode
+import io.airbyte.cdk.command.ConfiguredAirbyteCatalogSupplier
+import io.airbyte.cdk.command.ConnectorConfigurationSupplier
+import io.airbyte.cdk.command.ConnectorInputStateSupplier
+import io.airbyte.cdk.command.EmptyInputState
 import io.airbyte.cdk.command.GlobalInputState
 import io.airbyte.cdk.command.InputState
 import io.airbyte.cdk.command.SourceConnectorConfiguration
@@ -10,72 +14,114 @@ import io.airbyte.cdk.consumers.CatalogValidationFailureHandler
 import io.airbyte.cdk.jdbc.CatalogFieldSchema
 import io.airbyte.cdk.jdbc.ColumnMetadata
 import io.airbyte.cdk.jdbc.ColumnType
-import io.airbyte.cdk.jdbc.DiscoverMapper
 import io.airbyte.cdk.jdbc.MetadataQuerier
 import io.airbyte.cdk.jdbc.TableName
 import io.airbyte.commons.exceptions.ConfigErrorException
-import io.airbyte.commons.json.Jsons
-import io.airbyte.protocol.models.v0.AirbyteStateMessage
 import io.airbyte.protocol.models.v0.AirbyteStream
-import io.airbyte.protocol.models.v0.AirbyteStreamNameNamespacePair
 import io.airbyte.protocol.models.v0.ConfiguredAirbyteCatalog
 import io.airbyte.protocol.models.v0.ConfiguredAirbyteStream
 import io.airbyte.protocol.models.v0.SyncMode
+import jakarta.inject.Singleton
+import java.util.function.Supplier
 
 
-data class StateManagerFactory(
-    val metadataQuerier: MetadataQuerier,
-    val discoverMapper: DiscoverMapper,
+@Singleton
+class StateManagerSupplier(
+    val configSupplier: ConnectorConfigurationSupplier<SourceConnectorConfiguration>,
+    val catalogSupplier: ConfiguredAirbyteCatalogSupplier,
+    val stateSupplier: ConnectorInputStateSupplier,
+    val metadataQuerierFactory: MetadataQuerier.SessionFactory,
     val validationHandler: CatalogValidationFailureHandler
-) {
+) : Supplier<StateManager> {
 
-    fun create(
-        config: SourceConnectorConfiguration,
+    private val instance: StateManager by lazy {
+        val config: SourceConnectorConfiguration = configSupplier.get()
+        val configuredCatalog: ConfiguredAirbyteCatalog = catalogSupplier.get()
+        val inputState: InputState = stateSupplier.get()
+        if (config.global) {
+            when (inputState) {
+                is GlobalInputState ->
+                    createGlobal(configuredCatalog, inputState)
+                is StreamInputState ->
+                    throw ConfigErrorException("input state unexpectedly of type STREAM")
+                is EmptyInputState ->
+                    createGlobal(configuredCatalog)
+            }
+        } else {
+            when (inputState) {
+                is GlobalInputState ->
+                    throw ConfigErrorException("input state unexpectedly of type GLOBAL")
+                is StreamInputState ->
+                    createStream(configuredCatalog, inputState)
+                is EmptyInputState ->
+                    createStream(configuredCatalog)
+            }
+        }
+    }
+    override fun get(): StateManager = instance
+
+    private fun createGlobal(
         configuredCatalog: ConfiguredAirbyteCatalog,
-        inputState: InputState,
+        globalInputState: GlobalInputState? = null,
     ): StateManager {
-        val isGlobal: Boolean =
-            config.expectedStateType == AirbyteStateMessage.AirbyteStateType.GLOBAL
-        when (inputState) {
-            is GlobalInputState ->
-                if (!isGlobal) {
-                    throw ConfigErrorException(
-                        "Input state is GLOBAL but config requires ${config.expectedStateType}"
-                    )
-                }
-            is StreamInputState ->
-                if (isGlobal) {
-                    throw ConfigErrorException(
-                        "Input state is STREAM but config requires ${config.expectedStateType}"
-                    )
-                }
-            else -> Unit
-        }
-        val tableNames: List<TableName> = metadataQuerier.tableNames()
-        val streamSpecs: List<StreamSpec> = configuredCatalog.streams.mapNotNull {
-            toStreamSpec(it, tableNames)
-        }
-        val globalSpec = GlobalSpec(streamSpecs)
+        val allStreamSpecs: List<StreamSpec> = catalogStreamSpecs(configuredCatalog)
+        val globalStreamSpecs: List<StreamSpec> =
+            allStreamSpecs.filter { it.configuredSyncMode == SyncMode.INCREMENTAL }
         return StateManager(
-            initialGlobal = when (inputState) {
-                is GlobalInputState -> CdcOngoing(globalSpec, inputState.global.cdc)
-                else -> if (isGlobal) startCdc(globalSpec) else null
+            initialGlobal = if (globalInputState == null) {
+                CdcNotStarted(GlobalSpec(globalStreamSpecs))
+            } else {
+                CdcStarting(GlobalSpec(globalStreamSpecs), globalInputState.global.cdc)
             },
-            initialStreams = streamSpecs.map { streamSpec: StreamSpec ->
-                val cs: ConfiguredAirbyteStream =
-                        configuredCatalog.streams.find { it.stream == streamSpec.stream }!!
-                val readKind: ReadKind = when (cs.syncMode) {
-                    SyncMode.INCREMENTAL -> if (isGlobal) ReadKind.CDC else ReadKind.CURSOR
-                    else -> ReadKind.FULL_REFRESH
+            initialStreams = allStreamSpecs.map { streamSpec: StreamSpec ->
+                when (streamSpec.configuredSyncMode) {
+                    SyncMode.INCREMENTAL -> buildStreamReadState(
+                        ReadKind.CDC,
+                        streamSpec,
+                        globalInputState?.globalStreams?.get(streamSpec.namePair)
+                    )
+                    SyncMode.FULL_REFRESH -> buildStreamReadState(
+                        ReadKind.FULL_REFRESH,
+                        streamSpec,
+                        globalInputState?.nonGlobalStreams?.get(streamSpec.namePair)
+                    )
                 }
-                val value: StreamStateValue? =
-                        inputState.stream[AirbyteStreamNameNamespacePair.fromConfiguredAirbyteSteam(cs)]
-                buildStreamReadState(readKind, streamSpec, value) as SerializableStreamState
-            },
+            }
         )
     }
 
-    private fun toStreamSpec(configuredStream: ConfiguredAirbyteStream, tableNames: List<TableName>): StreamSpec? {
+    private fun createStream(
+        configuredCatalog: ConfiguredAirbyteCatalog,
+        streamInputState: StreamInputState? = null,
+    ): StateManager {
+        return StateManager(
+            initialGlobal = null,
+            initialStreams = catalogStreamSpecs(configuredCatalog).map { streamSpec: StreamSpec ->
+                val readKind: ReadKind = when (streamSpec.configuredSyncMode) {
+                    SyncMode.INCREMENTAL -> ReadKind.CURSOR
+                    SyncMode.FULL_REFRESH -> ReadKind.FULL_REFRESH
+                }
+                val stateValue: StreamStateValue? =
+                    streamInputState?.streams?.get(streamSpec.namePair)
+                buildStreamReadState(readKind, streamSpec, stateValue)
+            }
+        )
+    }
+
+    private fun catalogStreamSpecs(configuredCatalog: ConfiguredAirbyteCatalog): List<StreamSpec> {
+        metadataQuerierFactory.get().use { metadataQuerier: MetadataQuerier ->
+            val tableNames: List<TableName> = metadataQuerier.tableNames()
+            return configuredCatalog.streams.mapNotNull {
+                toStreamSpec(metadataQuerier, it, tableNames)
+            }
+        }
+    }
+
+    private fun toStreamSpec(
+        metadataQuerier: MetadataQuerier,
+        configuredStream: ConfiguredAirbyteStream,
+        tableNames: List<TableName>,
+    ): StreamSpec? {
         val stream: AirbyteStream = configuredStream.stream
         val jsonSchemaProperties: JsonNode = stream.jsonSchema["properties"]
         val name: String = stream.name!!
@@ -112,7 +158,8 @@ data class StateManagerFactory(
                 validationHandler.columnNotFound(name, namespace, columnLabel)
                 continue
             }
-            val discoveredType: ColumnType = discoverMapper.columnType(column.metadata)
+            val discoveredType: ColumnType =
+                metadataQuerierFactory.discoverMapper.columnType(column.metadata)
             if (column.type != discoveredType) {
                 validationHandler.columnTypeMismatch(
                     name, namespace, columnLabel, column.type, discoveredType)
@@ -158,36 +205,32 @@ data class StateManagerFactory(
         )
     }
 
-    private fun startCdc(spec: GlobalSpec): State<GlobalSpec> {
-        // TODO: add CDC support.
-        return CdcStarting(spec, Jsons.emptyObject())
-    }
-
     private fun buildStreamReadState(
         readKind: ReadKind,
         spec: StreamSpec,
         stateValue: StreamStateValue?
-    ): State<StreamSpec> {
-        if (stateValue == null) {
-            return when (readKind) {
-                ReadKind.CDC -> startCdcInitialSync(spec)
-                ReadKind.CURSOR -> startCursorBasedIncremental(spec)
-                ReadKind.FULL_REFRESH -> startFullRefresh(spec)
-            }
-        }
+    ): StreamState {
         val pk: Map<DataColumn, String>? = run {
+            if (stateValue == null) {
+                return@run null
+            }
             if (stateValue.primaryKey.isEmpty()) {
                 return@run mapOf()
             }
+            val pkKeys: Set<String> = stateValue.primaryKey.keys
             val keys: List<DataColumn>? = spec.primaryKeyCandidates.find { pk: List<DataColumn> ->
                 pk.map { it.metadata.label }.toSet() == stateValue.primaryKey.keys
             }
             if (keys == null) {
+                validationHandler.invalidPrimaryKey(spec.name, spec.namespace, pkKeys.toList())
                 return@run null
             }
             keys.associateWith { stateValue.primaryKey[it.metadata.label]!! }
         }
         val cursor: Pair<CursorColumn, String>? = run {
+            if (stateValue == null) {
+                return@run null
+            }
             if (readKind != ReadKind.CURSOR) {
                 return@run null
             }
@@ -209,7 +252,7 @@ data class StateManagerFactory(
             ReadKind.CDC ->
                 if (pk == null) {
                     validationHandler.resetStream(spec.name, spec.namespace)
-                    startCdcInitialSync(spec)
+                    CdcInitialSyncNotStarted(spec)
                 } else if (pk.isNotEmpty()) {
                     CdcInitialSyncOngoing(spec, pk.keys.toList(), pk.values.toList())
                 } else {
@@ -218,49 +261,22 @@ data class StateManagerFactory(
             ReadKind.CURSOR ->
                 if (cursor == null || pk == null) {
                     validationHandler.resetStream(spec.name, spec.namespace)
-                    startCursorBasedIncremental(spec)
+                    CursorBasedNotStarted(spec)
                 } else if (pk.isNotEmpty()) {
-                    CursorBasedIncrementalInitialSyncOngoing(
+                    CursorBasedInitialSyncOngoing(
                         spec, pk.keys.toList(), pk.values.toList(), cursor.first, cursor.second)
                 } else {
-                    CursorBasedIncrementalOngoing(spec, cursor.first, cursor.second)
+                    CursorBasedIncrementalStarting(spec, cursor.first, cursor.second)
                 }
             ReadKind.FULL_REFRESH ->
-                if (pk == null) {
+                if (pk.isNullOrEmpty()) {
                     validationHandler.resetStream(spec.name, spec.namespace)
-                    startFullRefresh(spec)
-                } else if (pk.isNotEmpty()) {
-                    FullRefreshResumableOngoing(spec, pk.keys.toList(), pk.values.toList())
+                    FullRefreshNotStarted(spec)
                 } else {
-                    FullRefreshCompleted(spec)
+                    FullRefreshResumableOngoing(spec, pk.keys.toList(), pk.values.toList())
                 }
         }
     }
-
-    private fun startCdcInitialSync(spec: StreamSpec): State<StreamSpec> =
-        spec.pickedPrimaryKey
-            ?.let { CdcInitialSyncStarting(spec, it) }
-            ?: CdcInitialSyncNotStarted(spec)
-
-    private fun startCursorBasedIncremental(spec: StreamSpec): State<StreamSpec> {
-        if (spec.pickedCursor == null || spec.pickedPrimaryKey == null) {
-            return CursorBasedIncrementalNotStarted(spec)
-        }
-        val cursorValue: String =
-            metadataQuerier.maxCursorValue(spec.table, spec.pickedCursor.name)
-                ?: return CursorBasedIncrementalNotStarted(spec)
-        return CursorBasedIncrementalInitialSyncStarting(
-            spec,
-            spec.pickedPrimaryKey,
-            spec.pickedCursor,
-            cursorValue,
-        )
-    }
-
-    private fun startFullRefresh(spec: StreamSpec): State<StreamSpec> =
-        spec.pickedPrimaryKey
-            ?.let { FullRefreshResumableStarting(spec, it) }
-            ?: FullRefreshNonResumableStarting(spec)
 
     private enum class ReadKind { CURSOR, CDC, FULL_REFRESH }
 }

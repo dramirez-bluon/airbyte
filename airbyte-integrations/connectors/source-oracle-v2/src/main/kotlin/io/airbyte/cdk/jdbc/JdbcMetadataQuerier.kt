@@ -2,9 +2,8 @@ package io.airbyte.cdk.jdbc
 
 import io.airbyte.cdk.command.ConnectorConfigurationSupplier
 import io.airbyte.cdk.command.SourceConnectorConfiguration
-import io.airbyte.cdk.read.CursorColumn
 import io.github.oshai.kotlinlogging.KotlinLogging
-import io.micronaut.context.annotation.Prototype
+import jakarta.inject.Singleton
 import java.sql.Connection
 import java.sql.JDBCType
 import java.sql.ResultSet
@@ -15,14 +14,11 @@ import java.sql.Statement
 private val logger = KotlinLogging.logger {}
 
 /** Default implementation of [MetadataQuerier]. */
-@Prototype
 private class JdbcMetadataQuerier(
+    val config: SourceConnectorConfiguration,
     val discoverMapper: DiscoverMapper,
-    val configSupplier: ConnectorConfigurationSupplier<SourceConnectorConfiguration>,
-    val jdbcConnectionFactory: JdbcConnectionFactory
+    jdbcConnectionFactory: JdbcConnectionFactory
 ) : MetadataQuerier {
-
-    val config: SourceConnectorConfiguration by lazy { configSupplier.get() }
 
     val connDelegate: Lazy<Connection> = lazy { jdbcConnectionFactory.get() }
     val conn: Connection by connDelegate
@@ -124,32 +120,22 @@ private class JdbcMetadataQuerier(
         }
     }
 
-    override fun maxCursorValue(table: TableName, cursorColumnName: String): String? {
-        val sql: String = discoverMapper.selectMaxCursorValue(table, cursorColumnName)
-        logger.info { "Querying $sql for sync preparation." }
-        try {
-            table.catalog?.let { conn.catalog = it }
-            table.schema?.let { conn.schema = it }
-            conn.createStatement().use { stmt: Statement ->
-                stmt.fetchSize = 1
-                val rs: ResultSet = stmt.executeQuery(sql)
-                val result: String? = if (!rs.next()) {
-                    null
-                } else {
-                    rs.getString(1)?.let { if (rs.wasNull()) null else it }
-                }
-                logger.info { "Max '$cursorColumnName' value is '${result ?: "NULL"}' in $table." }
-                return result
-            }
-        } catch (e: SQLException) {
-            throw RuntimeException("Max cursor value query failed with exception.", e)
-        }
-    }
-
     override fun close() {
         if (connDelegate.isInitialized()) {
             logger.info { "Closing JDBC connection." }
             conn.close()
         }
+    }
+
+    /** Default implementation of [MetadataQuerier.SessionFactory]. */
+    @Singleton
+    class JdbcMetadataSessionFactory(
+        override val discoverMapper: DiscoverMapper,
+        val configSupplier: ConnectorConfigurationSupplier<SourceConnectorConfiguration>,
+        val jdbcConnectionFactory: JdbcConnectionFactory
+    ) : MetadataQuerier.SessionFactory {
+
+        override fun get(): MetadataQuerier =
+            JdbcMetadataQuerier(configSupplier.get(), discoverMapper, jdbcConnectionFactory)
     }
 }

@@ -6,9 +6,6 @@ package io.airbyte.cdk
 
 import io.micronaut.core.cli.CommandLine as MicronautCommandLine
 import io.airbyte.cdk.command.ConnectorCommandLinePropertySource
-import io.airbyte.cdk.integrations.base.AirbyteTraceMessageUtility
-import io.airbyte.cdk.integrations.util.ApmTraceUtils
-import io.airbyte.cdk.integrations.util.ConnectorExceptionUtil
 import io.github.oshai.kotlinlogging.KotlinLogging
 import io.micronaut.configuration.picocli.MicronautFactory
 import io.micronaut.context.ApplicationContext
@@ -29,8 +26,6 @@ class AirbyteConnectorRunner {
     }
 
     companion object {
-
-        private val logger = KotlinLogging.logger {}
 
         @JvmStatic
         fun <R : Runnable> run(

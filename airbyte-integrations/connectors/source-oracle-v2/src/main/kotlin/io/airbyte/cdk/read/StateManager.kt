@@ -37,7 +37,7 @@ class StateManager(
         }
     }
 
-    fun get(): List<State<out Spec>> =
+    fun currentStates(): List<State<out Spec>> =
         listOfNotNull(global?.state()) +
             (global?.streamStateManagers?.values ?: listOf()).map { it.state() } +
             nonGlobal.values.map { it.state() }
@@ -109,7 +109,7 @@ class StateManager(
                 totalNumRecords += streamNumRecords
             }
             val airbyteGlobalState = AirbyteGlobalState()
-                .withSharedState(Jsons.jsonNode((state as SerializableGlobalState).value()))
+                .withSharedState(Jsons.jsonNode((state as SerializableGlobalState).toGlobalStateValue()))
                 .withStreamStates(streamStates)
             return AirbyteStateMessage()
                 .withType(AirbyteStateMessage.AirbyteStateType.GLOBAL)
@@ -124,7 +124,7 @@ class StateManager(
 
         fun checkpointGlobalStream(): Pair<AirbyteStreamState, Long> {
             val (state: SerializableState<StreamSpec>?, numRecords: Long) = swap() ?: (null to 0L)
-            val value: StreamStateValue? = (state as? SerializableStreamState)?.value()
+            val value: StreamStateValue? = (state as? SerializableStreamState)?.toStreamStateValue()
             return AirbyteStreamState()
                 .withStreamDescriptor(spec.streamDescriptor)
                 .withStreamState(value?.let { Jsons.jsonNode(it) }) to numRecords
@@ -140,7 +140,7 @@ class StateManager(
             val (state: SerializableState<StreamSpec>, numRecords: Long) = swap() ?: return null
             val airbyteStreamState = AirbyteStreamState()
                 .withStreamDescriptor(spec.streamDescriptor)
-                .withStreamState(Jsons.jsonNode((state as SerializableStreamState).value()))
+                .withStreamState(Jsons.jsonNode((state as SerializableStreamState).toStreamStateValue()))
             return AirbyteStateMessage()
                 .withType(AirbyteStateMessage.AirbyteStateType.STREAM)
                 .withStream(airbyteStreamState)

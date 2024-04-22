@@ -13,12 +13,12 @@ import com.networknt.schema.SchemaValidatorsConfig
 import com.networknt.schema.SpecVersion
 import io.airbyte.commons.exceptions.ConfigErrorException
 import io.airbyte.commons.jackson.MoreMappers
-import io.airbyte.commons.json.Jsons
 import io.airbyte.protocol.models.v0.AirbyteGlobalState
 import io.airbyte.protocol.models.v0.AirbyteStateMessage
 import io.airbyte.protocol.models.v0.AirbyteStream
 import io.airbyte.protocol.models.v0.AirbyteStreamNameNamespacePair
 import io.airbyte.protocol.models.v0.ConfiguredAirbyteCatalog
+import io.airbyte.protocol.models.v0.StreamDescriptor
 import io.github.oshai.kotlinlogging.KotlinLogging
 import io.micronaut.context.annotation.ConfigurationProperties
 import io.micronaut.context.annotation.Prototype
@@ -81,50 +81,49 @@ private class ConnectorInputStateSupplierImpl : ConnectorInputStateSupplier {
         if (list.isEmpty()) {
             return@lazy EmptyInputState
         }
-        val type: AirbyteStateMessage.AirbyteStateType = list.first().type
-        val isGlobal: Boolean =
-            when (type) {
-                AirbyteStateMessage.AirbyteStateType.GLOBAL -> true
-                AirbyteStateMessage.AirbyteStateType.STREAM -> false
-                else -> throw ConfigErrorException("unsupported state type $type")
+        val deduped: List<AirbyteStateMessage> = list
+            .groupBy { msg: AirbyteStateMessage ->
+                if (msg.stream == null) {
+                    msg.type.toString()
+                } else {
+                    val desc: StreamDescriptor = msg.stream.streamDescriptor
+                    AirbyteStreamNameNamespacePair(desc.name, desc.namespace).toString()
+                }
             }
-        val filtered: List<AirbyteStateMessage> = list.filter { it.type == type }
-        if (filtered.size < list.size) {
-            val n = list.size - filtered.size
-            logger.warn { "Discarded $n state message(s) not of type $type." }
-        }
-        if (isGlobal) {
-            if (filtered.size > 1) {
-                logger.warn { "Discarded all but last global state message." }
+            .mapNotNull { (groupKey, groupValues) ->
+                if (groupValues.size > 1) {
+                    logger.warn {
+                        "Discarded duplicated ${groupValues.size - 1} state message(s) " +
+                            "for '$groupKey'."
+                    }
+                }
+                groupValues.last()
             }
-            val global: AirbyteGlobalState = filtered.first().global
-            return@lazy GlobalInputState(
-                JsonUtils.parseUnvalidated(global.sharedState, GlobalStateValue::class.java),
-                global.streamStates.associate {
-                    AirbyteStreamNameNamespacePair(
-                        it.streamDescriptor.name,
-                        it.streamDescriptor.namespace
-                    ) to JsonUtils.parseUnvalidated(it.streamState, StreamStateValue::class.java)
-                }
-            )
+        val nonGlobalStreams: Map<AirbyteStreamNameNamespacePair, StreamStateValue> = deduped
+            .mapNotNull { it.stream }
+            .associate {
+                AirbyteStreamNameNamespacePair(
+                    it.streamDescriptor.name,
+                    it.streamDescriptor.namespace
+                ) to JsonUtils.parseUnvalidated(it.streamState, StreamStateValue::class.java)
+            }
+        val globalState: AirbyteGlobalState? = deduped
+            .find { it.type == AirbyteStateMessage.AirbyteStateType.GLOBAL }
+            ?.global
+        if (globalState == null) {
+            return@lazy StreamInputState(nonGlobalStreams)
         }
-        val lastOfEachStream: Map<AirbyteStreamNameNamespacePair, StreamStateValue> =
-            filtered
-                .map { it.stream }
-                .groupingBy {
-                    AirbyteStreamNameNamespacePair(
-                        it.streamDescriptor.name,
-                        it.streamDescriptor.namespace
-                    )
-                }
-                .reduce { _, _, msg -> msg }
-                .mapValues {
-                    JsonUtils.parseUnvalidated(it.value.streamState, StreamStateValue::class.java)
-                }
-        if (lastOfEachStream.size < filtered.size) {
-            logger.warn { "Discarded all but last stream state for each stream descriptor." }
-        }
-        return@lazy StreamInputState(lastOfEachStream)
+        val globalStateValue: GlobalStateValue =
+            JsonUtils.parseUnvalidated(globalState.sharedState, GlobalStateValue::class.java)
+        val globalStreams: Map<AirbyteStreamNameNamespacePair, StreamStateValue> = globalState
+            .streamStates
+            .associate {
+                AirbyteStreamNameNamespacePair(
+                    it.streamDescriptor.name,
+                    it.streamDescriptor.namespace
+                ) to JsonUtils.parseUnvalidated(it.streamState, StreamStateValue::class.java)
+            }
+        return@lazy GlobalInputState(globalStateValue, globalStreams, nonGlobalStreams)
     }
 
     override fun get(): InputState = value

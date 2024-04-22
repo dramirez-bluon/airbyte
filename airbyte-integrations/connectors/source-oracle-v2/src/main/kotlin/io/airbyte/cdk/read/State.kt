@@ -14,13 +14,6 @@ sealed interface SerializableState<S : Spec> : State<S>
 sealed interface SerializableGlobalState : GlobalState, SerializableState<GlobalSpec>
 sealed interface SerializableStreamState : StreamState, SerializableState<StreamSpec>
 
-sealed interface SelectableState<S : Spec> : State<S>
-sealed interface SelectableGlobalState : GlobalState, SelectableState<GlobalSpec>
-sealed interface CdcWorkPending : SelectableGlobalState
-sealed interface SelectableStreamState : StreamState, SelectableState<StreamSpec>
-sealed interface NonResumableSelectWorkPending : SelectableStreamState
-sealed interface ResumableSelectWorkPending : SelectableStreamState
-
 
 data class CdcNotStarted(
     override val spec: GlobalSpec
@@ -28,13 +21,14 @@ data class CdcNotStarted(
 
 data class CdcStarting(
     override val spec: GlobalSpec,
-    val checkpointedCdcValue: JsonNode
-) : GlobalState, CdcWorkPending
+    val checkpointedCdcValue: JsonNode,
+) : GlobalState
 
 data class CdcOngoing(
     override val spec: GlobalSpec,
-    val checkpointedCdcValue: JsonNode
-) : GlobalState, CdcWorkPending, SerializableGlobalState
+    val checkpointedCdcValue: JsonNode,
+    val targetCdcValue: JsonNode,
+) : GlobalState, SerializableGlobalState
 
 data class CdcCompleted(
     override val spec: GlobalSpec,
@@ -45,50 +39,52 @@ data class FullRefreshNotStarted(
     override val spec: StreamSpec,
 ) : StreamState
 
-data class FullRefreshNonResumableStarting(
-    override val spec: StreamSpec,
-) : StreamState, NonResumableSelectWorkPending
-
 data class FullRefreshResumableStarting(
     override val spec: StreamSpec,
     val primaryKey: List<DataColumn>
-) : StreamState, ResumableSelectWorkPending
+) : StreamState
 
 data class FullRefreshResumableOngoing(
     override val spec: StreamSpec,
     val primaryKey: List<DataColumn>,
     val checkpointedPrimaryKeyValues: List<String>,
-) : StreamState, ResumableSelectWorkPending, SerializableStreamState
+) : StreamState, SerializableStreamState
 
 data class FullRefreshCompleted(
     override val spec: StreamSpec,
 ) : StreamState, SerializableStreamState
 
-
-data class CursorBasedIncrementalNotStarted(
+data class CursorBasedNotStarted(
     override val spec: StreamSpec,
 ) : StreamState
 
-data class CursorBasedIncrementalInitialSyncStarting(
+data class CursorBasedInitialSyncStarting(
     override val spec: StreamSpec,
     val primaryKey: List<DataColumn>,
     val cursor: CursorColumn,
     val checkpointedCursorValue: String,
-) : StreamState, ResumableSelectWorkPending
+) : StreamState
 
-data class CursorBasedIncrementalInitialSyncOngoing(
+data class CursorBasedInitialSyncOngoing(
     override val spec: StreamSpec,
     val primaryKey: List<DataColumn>,
     val checkpointedPrimaryKeyValues: List<String>,
     val cursor: CursorColumn,
     val checkpointedCursorValue: String,
-) : StreamState, ResumableSelectWorkPending, SerializableStreamState
+) : StreamState, SerializableStreamState
+
+data class CursorBasedIncrementalStarting(
+    override val spec: StreamSpec,
+    val cursor: CursorColumn,
+    val checkpointedCursorValue: String,
+) : StreamState
 
 data class CursorBasedIncrementalOngoing(
     override val spec: StreamSpec,
     val cursor: CursorColumn,
     val checkpointedCursorValue: String,
-) : StreamState, ResumableSelectWorkPending, SerializableStreamState
+    val targetCursorValue: String,
+    ) : StreamState, SerializableStreamState
 
 data class CursorBasedIncrementalCompleted(
     override val spec: StreamSpec,
@@ -103,39 +99,35 @@ data class CdcInitialSyncNotStarted(
 data class CdcInitialSyncStarting(
     override val spec: StreamSpec,
     val primaryKey: List<DataColumn>,
-) : StreamState, ResumableSelectWorkPending
+) : StreamState
 
 data class CdcInitialSyncOngoing(
     override val spec: StreamSpec,
     val primaryKey: List<DataColumn>,
     val checkpointedPrimaryKeyValues: List<String>,
-) : StreamState, ResumableSelectWorkPending, SerializableStreamState
+) : StreamState, SerializableStreamState
 
 data class CdcInitialSyncCompleted(
     override val spec: StreamSpec,
 ) : StreamState, SerializableStreamState
 
-fun SerializableGlobalState.value(): GlobalStateValue = when (this) {
+fun SerializableGlobalState.toGlobalStateValue(): GlobalStateValue = when (this) {
     is CdcOngoing -> GlobalStateValue(this.checkpointedCdcValue)
     is CdcCompleted -> GlobalStateValue(this.checkpointedCdcValue)
 }
 
-fun SerializableStreamState.value(): StreamStateValue = when (this) {
+fun SerializableStreamState.toStreamStateValue(): StreamStateValue = when (this) {
     is FullRefreshResumableOngoing -> StreamStateValue(
-        primaryKey.map { it.metadata.label }.zip(checkpointedPrimaryKeyValues).toMap(),
-        mapOf())
-    is FullRefreshCompleted -> StreamStateValue(mapOf(), mapOf())
-    is CursorBasedIncrementalInitialSyncOngoing -> StreamStateValue(
-        primaryKey.map { it.metadata.label }.zip(checkpointedPrimaryKeyValues).toMap(),
-        mapOf(cursor.name to checkpointedCursorValue))
+        primaryKey.map { it.metadata.label }.zip(checkpointedPrimaryKeyValues).toMap())
+    is FullRefreshCompleted -> StreamStateValue()
+    is CursorBasedInitialSyncOngoing -> StreamStateValue(
+        primaryKey = primaryKey.map { it.metadata.label }.zip(checkpointedPrimaryKeyValues).toMap(),
+        cursors = mapOf(cursor.name to checkpointedCursorValue))
     is CursorBasedIncrementalOngoing -> StreamStateValue(
-        mapOf(),
-        mapOf(cursor.name to checkpointedCursorValue))
+        cursors = mapOf(cursor.name to checkpointedCursorValue))
     is CursorBasedIncrementalCompleted -> StreamStateValue(
-        mapOf(),
-        mapOf(cursor.name to checkpointedCursorValue))
+        cursors = mapOf(cursor.name to checkpointedCursorValue))
     is CdcInitialSyncOngoing -> StreamStateValue(
-        primaryKey.map { it.metadata.label }.zip(checkpointedPrimaryKeyValues).toMap(),
-        mapOf())
-    is CdcInitialSyncCompleted -> StreamStateValue(mapOf(), mapOf())
+        primaryKey.map { it.metadata.label }.zip(checkpointedPrimaryKeyValues).toMap())
+    is CdcInitialSyncCompleted -> StreamStateValue()
 }

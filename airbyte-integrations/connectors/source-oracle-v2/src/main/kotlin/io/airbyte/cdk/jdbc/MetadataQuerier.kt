@@ -1,6 +1,6 @@
 package io.airbyte.cdk.jdbc
 
-import java.sql.JDBCType
+import java.util.function.Supplier
 
 /** A very thin abstraction around JDBC metadata queries, to help with testing. */
 interface MetadataQuerier : AutoCloseable {
@@ -17,6 +17,8 @@ interface MetadataQuerier : AutoCloseable {
     /** Queries the information_schema for all primary keys for the given table. */
     fun primaryKeys(table: TableName): List<List<String>>
 
-    /* Queries the table for the max value of the column. */
-    fun maxCursorValue(table: TableName, cursorColumnName: String): String?
+    interface SessionFactory : Supplier<MetadataQuerier> {
+        val discoverMapper: DiscoverMapper
+    }
 }
+

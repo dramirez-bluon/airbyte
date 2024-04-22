@@ -35,7 +35,6 @@ interface OutputConsumer : Consumer<AirbyteMessage> {
         accept(AirbyteMessage().withType(AirbyteMessage.Type.SPEC).withConnectionStatus(status))
     }
 
-
     fun accept(catalog: AirbyteCatalog) {
         accept(AirbyteMessage().withType(AirbyteMessage.Type.CATALOG).withCatalog(catalog))
     }

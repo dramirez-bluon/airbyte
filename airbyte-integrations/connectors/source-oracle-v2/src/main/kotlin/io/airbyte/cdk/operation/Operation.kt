@@ -4,7 +4,6 @@
 
 package io.airbyte.cdk.operation
 
-import io.airbyte.cdk.AirbyteConnectorRunner
 import io.airbyte.cdk.integrations.base.AirbyteTraceMessageUtility
 import io.airbyte.cdk.integrations.util.ApmTraceUtils
 import io.airbyte.cdk.integrations.util.ConnectorExceptionUtil

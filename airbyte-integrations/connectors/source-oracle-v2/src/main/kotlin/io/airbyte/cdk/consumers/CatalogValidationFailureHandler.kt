@@ -18,6 +18,8 @@ interface CatalogValidationFailureHandler {
 
     fun columnTypeMismatch(streamName: String, streamNamespace: String?, columnName: String, expected: ColumnType, actual: ColumnType)
 
+    fun invalidPrimaryKey(streamName: String, streamNamespace: String?, primaryKey: List<String>)
+
     fun invalidCursor(streamName: String, streamNamespace: String?, cursor: String)
 
     fun resetStream(streamName: String, streamNamespace: String?)
@@ -48,6 +50,13 @@ class LoggingCatalogValidationFailureHandler : CatalogValidationFailureHandler {
         logger.warn {
             "In table '$streamName' in ${inNamespace(streamNamespace)}: " +
                 "column '$columnName' not found."
+        }
+    }
+
+    override fun invalidPrimaryKey(streamName: String, streamNamespace: String?, pk: List<String>) {
+        logger.warn {
+            "In table '$streamName' in ${inNamespace(streamNamespace)}: " +
+                "invalid primary key '$pk'."
         }
     }
 

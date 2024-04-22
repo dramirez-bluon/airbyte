@@ -4,36 +4,20 @@
 
 package io.airbyte.cdk.operation
 
-import com.fasterxml.jackson.databind.JsonNode
-import io.airbyte.cdk.command.ConfiguredAirbyteCatalogSupplier
 import io.airbyte.cdk.command.ConnectorConfigurationSupplier
-import io.airbyte.cdk.command.ConnectorInputStateSupplier
 import io.airbyte.cdk.command.SourceConnectorConfiguration
-import io.airbyte.cdk.consumers.CatalogValidationFailureHandler
 import io.airbyte.cdk.consumers.OutputConsumer
-import io.airbyte.cdk.jdbc.DiscoverMapper
-import io.airbyte.cdk.jdbc.JdbcConnectionFactory
-import io.airbyte.cdk.jdbc.MetadataQuerier
-import io.airbyte.cdk.jdbc.RowToRecordData
-import io.airbyte.cdk.jdbc.SourceOperations
-import io.airbyte.cdk.read.ReadSpecsToStates
-import io.airbyte.cdk.read.StateManagerFactory
-import io.airbyte.cdk.read.SelectableStreamState
 import io.airbyte.cdk.read.StateManager
-import io.airbyte.cdk.read.StreamSpec
-import io.airbyte.cdk.read.ThreadSafeWorkerContext
-import io.airbyte.cdk.read.WorkerRunner
-import io.airbyte.protocol.models.v0.AirbyteMessage
-import io.airbyte.protocol.models.v0.AirbyteRecordMessage
-import io.airbyte.protocol.models.v0.AirbyteStateMessage
-import io.airbyte.protocol.models.v0.AirbyteStateStats
-import io.airbyte.protocol.models.v0.AirbyteStreamState
+import io.airbyte.cdk.read.StateManagerSupplier
+import io.airbyte.cdk.read.WorkerFactory
+import io.airbyte.cdk.read.WorkerThreadRunnable
 import io.github.oshai.kotlinlogging.KotlinLogging
 import io.micronaut.context.annotation.Requires
 import jakarta.inject.Singleton
-import java.sql.Connection
-import java.sql.PreparedStatement
-import java.sql.ResultSet
+import java.util.concurrent.ExecutionException
+import java.util.concurrent.Executors
+import java.util.concurrent.Future
+import java.util.concurrent.ThreadFactory
 
 private val logger = KotlinLogging.logger {}
 
@@ -41,39 +25,48 @@ private val logger = KotlinLogging.logger {}
 @Requires(property = CONNECTOR_OPERATION, value = "read")
 @Requires(env = ["source"])
 class ReadOperation(
+    val stateManagerSupplier: StateManagerSupplier,
+    val workerFactory: WorkerFactory,
     val configSupplier: ConnectorConfigurationSupplier<SourceConnectorConfiguration>,
-    val catalogSupplier: ConfiguredAirbyteCatalogSupplier,
-    val stateSupplier: ConnectorInputStateSupplier,
-    //
-    val discoverMapper: DiscoverMapper,
-    val metadataQuerier: MetadataQuerier,
-    //
-    val sourceOperations: SourceOperations,
-    val jdbcConnectionFactory: JdbcConnectionFactory,
     val outputConsumer: OutputConsumer,
-    val validationHandler: CatalogValidationFailureHandler,
-) : Operation, AutoCloseable {
+) : Operation {
 
     override val type = OperationType.READ
 
-    private val factory = StateManagerFactory(
-        metadataQuerier,
-        discoverMapper,
-        validationHandler
-    )
-
     override fun execute() {
-        val ctx = ThreadSafeWorkerContext(
-            sourceOperations,
-            outputConsumer
-        )
-        val stateManager: StateManager =
-            factory.create(configSupplier.get(), catalogSupplier.get(), stateSupplier.get())
-        for (input in stateManager.get()) {
-            WorkerRunner(ctx, stateManager, input).run()
+        val config: SourceConnectorConfiguration = configSupplier.get()
+        val stateManager: StateManager = stateManagerSupplier.get()
+        val threadFactory = object : ThreadFactory {
+            var n = 1L
+            override fun newThread(r: Runnable): Thread = Thread(r, "read-worker-${n++}")
+        }
+        val ex = Executors.newFixedThreadPool(config.workerConcurrency, threadFactory)
+        val runnables = stateManager.currentStates().map {
+            WorkerThreadRunnable(
+                workerFactory,
+                config.workUnitSoftTimeout,
+                outputConsumer,
+                stateManager,
+                it
+            )
+        }
+        val futures: Map<Future<*>, String> = runnables.associate { ex.submit(it) to it.name }
+        var n = 0L
+        for ((future, name) in futures) {
+            try {
+                future.get()
+            } catch (e: ExecutionException) {
+                n++
+                logger.error(e.cause ?: e) {
+                    "exception thrown by '$name', $n total so far"
+                }
+            }
+        }
+        if (n > 0) {
+            throw OperationExecutionException("incomplete read due to $n thread failure(s)")
         }
     }
-
+/*
     private fun readStream(streamSpec: StreamSpec, readState: SelectableStreamState) {
         val rowToRecordData = RowToRecordData(sourceOperations, streamSpec)
         val conn: Connection = jdbcConnectionFactory.get()
@@ -113,11 +106,7 @@ class ReadOperation(
         }
 
     }
-
-
-    override fun close() {
-        metadataQuerier.close()
-    }
+*/
 }
 
 

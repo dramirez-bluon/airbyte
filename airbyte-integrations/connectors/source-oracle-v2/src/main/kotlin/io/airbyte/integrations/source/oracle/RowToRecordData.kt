@@ -1,14 +1,17 @@
-package io.airbyte.cdk.jdbc
+package io.airbyte.integrations.source.oracle
 
 import com.fasterxml.jackson.databind.JsonNode
 import com.fasterxml.jackson.databind.node.ObjectNode
+import io.airbyte.cdk.jdbc.ArrayColumnType
+import io.airbyte.cdk.jdbc.ColumnType
+import io.airbyte.cdk.jdbc.LeafType
 import io.airbyte.cdk.read.DataColumn
 import io.airbyte.cdk.read.StreamSpec
 import io.airbyte.commons.json.Jsons
 import java.util.function.Function
 
 class RowToRecordData(
-    val sourceOperations: SourceOperations,
+    val sourceOperations: OracleSourceOperations,
     val streamSpec: StreamSpec,
 ) : Function<List<Any?>, JsonNode> {
 
