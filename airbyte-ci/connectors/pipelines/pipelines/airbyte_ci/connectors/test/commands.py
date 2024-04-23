@@ -85,6 +85,8 @@ async def test(
     """
     if only_steps and skip_steps:
         raise click.UsageError("Cannot use both --only-step and --skip-step at the same time.")
+    if not only_steps:
+        skip_steps += ["regression"]
     if ctx.obj["is_ci"]:
         fail_if_missing_docker_hub_creds(ctx)
 
@@ -101,6 +103,7 @@ async def test(
         keep_steps=[CONNECTOR_TEST_STEP_ID(step_id) for step_id in only_steps],
         step_params=extra_params,
     )
+
     connectors_tests_contexts = [
         ConnectorContext(
             pipeline_name=f"Testing connector {connector.technical_name}",
