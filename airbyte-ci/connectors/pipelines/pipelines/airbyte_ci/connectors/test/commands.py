@@ -2,6 +2,7 @@
 # Copyright (c) 2023 Airbyte, Inc., all rights reserved.
 #
 
+import shutil
 from typing import Dict, List
 
 import asyncclick as click
@@ -10,6 +11,7 @@ from pipelines.airbyte_ci.connectors.consts import CONNECTOR_TEST_STEP_ID
 from pipelines.airbyte_ci.connectors.context import ConnectorContext
 from pipelines.airbyte_ci.connectors.pipeline import run_connectors_pipelines
 from pipelines.airbyte_ci.connectors.test.pipeline import run_connector_test_pipeline
+from pipelines.airbyte_ci.connectors.test.steps.common import RegressionTests
 from pipelines.cli.click_decorators import click_ci_requirements_option
 from pipelines.cli.dagger_pipeline_command import DaggerPipelineCommand
 from pipelines.consts import LOCAL_BUILD_PLATFORM, ContextState
@@ -146,6 +148,11 @@ async def test(
         main_logger.error("An error occurred while running the test pipeline", exc_info=e)
         update_global_commit_status_check_for_tests(ctx.obj, "failure")
         return False
+
+    finally:
+        if RegressionTests.regression_tests_artifacts_dir.exists():
+            shutil.rmtree(RegressionTests.regression_tests_artifacts_dir)
+            main_logger.info(f"  Test artifacts cleaned up from {RegressionTests.regression_tests_artifacts_dir}")
 
     @ctx.call_on_close
     def send_commit_status_check() -> None:
