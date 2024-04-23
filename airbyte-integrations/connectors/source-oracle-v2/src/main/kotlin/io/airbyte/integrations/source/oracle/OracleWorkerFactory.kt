@@ -23,6 +23,7 @@ import io.airbyte.cdk.read.WorkResult
 import io.airbyte.cdk.read.Worker
 import io.airbyte.cdk.read.WorkerFactory
 import jakarta.inject.Singleton
+import java.sql.Connection
 
 @Singleton
 class OracleWorkerFactory(

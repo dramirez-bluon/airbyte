@@ -15,6 +15,9 @@ interface Worker<S : Spec, I : State<S>> : Callable<WorkResult<S,I>>{
 
     val input: I
 
+    val spec: S
+        get() = input.spec
+
     fun signalStop()
 }
 
@@ -30,11 +33,9 @@ interface WorkerFactory {
     fun create(input: CdcInitialSyncStarting): StreamWorker<CdcInitialSyncStarting>
     fun create(input: CdcInitialSyncOngoing): StreamWorker<CdcInitialSyncOngoing>
 
-
     fun create(input: FullRefreshNotStarted): StreamWorker<FullRefreshNotStarted>
     fun create(input: FullRefreshResumableStarting): StreamWorker<FullRefreshResumableStarting>
     fun create(input: FullRefreshResumableOngoing): StreamWorker<FullRefreshResumableOngoing>
-
 
     fun create(input: CursorBasedNotStarted): StreamWorker<CursorBasedNotStarted>
     fun create(input: CursorBasedInitialSyncStarting): StreamWorker<CursorBasedInitialSyncStarting>
@@ -59,7 +60,7 @@ interface WorkerFactory {
 data class WorkResult<S : Spec, I : State<S>>(
     val input: I,
     val output: State<S>,
-    val numRecords: Long
+    val numRecords: Long = 0L
 )
 
 class WorkerThreadRunnable(
