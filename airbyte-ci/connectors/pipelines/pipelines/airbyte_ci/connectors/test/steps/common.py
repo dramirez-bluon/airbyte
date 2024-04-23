@@ -414,38 +414,28 @@ class RegressionTests(Step):
         """Create a container to run regression tests."""
         container = with_python_base(self.context)
 
-        container = (container.with_exec([
-            "apt-get", "update"
-        ]).with_exec([
-            "apt-get", "install", "-y", "git", "openssh-client", "curl", "docker.io"
-        ]).with_exec([
-            "bash", "-c", "curl https://sdk.cloud.google.com | bash"
-        ]).with_env_variable(
-         "PATH", "/root/google-cloud-sdk/bin:$PATH", expand=True
-        ).with_mounted_file(
-            "/root/.ssh/id_rsa", self.dagger_client.host().file(str(Path("~/.ssh/id_rsa").expanduser()))  # TODO
-        ).with_mounted_file(
-            "/root/.ssh/known_hosts",
-            self.dagger_client.host().file(str(Path("~/.ssh/known_hosts").expanduser()))  # TODO
-        ).with_mounted_file(
-            "/root/.config/gcloud/application_default_credentials.json",
-            self.dagger_client.host().file(str(Path("~/.config/gcloud/application_default_credentials.json").expanduser()))  # TODO
-        ).with_mounted_directory(
-            "/app", self.context.live_tests_dir
-        ).with_workdir(
-            f"/app"
-        ).with_exec([
-            "pip", "install", "poetry"
-        ]).with_exec(
-            ["poetry", "lock", "--no-update"]
-        ).with_exec([
-            "poetry", "install"
-        ])
-        ).with_unix_socket(
-            "/var/run/docker.sock", self.dagger_client.host().unix_socket("/var/run/docker.sock")
-        ).with_env_variable(
-            "RUN_IN_AIRBYTE_CI", "1"
-        ).with_new_file(
-            "/tmp/container_id.txt", contents=str(target_container_id)
+        container = (
+            (
+                container.with_exec(["apt-get", "update"])
+                .with_exec(["apt-get", "install", "-y", "git", "openssh-client", "curl", "docker.io"])
+                .with_exec(["bash", "-c", "curl https://sdk.cloud.google.com | bash"])
+                .with_env_variable("PATH", "/root/google-cloud-sdk/bin:$PATH", expand=True)
+                .with_mounted_file("/root/.ssh/id_rsa", self.dagger_client.host().file(str(Path("~/.ssh/id_rsa").expanduser())))  # TODO
+                .with_mounted_file(
+                    "/root/.ssh/known_hosts", self.dagger_client.host().file(str(Path("~/.ssh/known_hosts").expanduser()))  # TODO
+                )
+                .with_mounted_file(
+                    "/root/.config/gcloud/application_default_credentials.json",
+                    self.dagger_client.host().file(str(Path("~/.config/gcloud/application_default_credentials.json").expanduser())),  # TODO
+                )
+                .with_mounted_directory("/app", self.context.live_tests_dir)
+                .with_workdir(f"/app")
+                .with_exec(["pip", "install", "poetry"])
+                .with_exec(["poetry", "lock", "--no-update"])
+                .with_exec(["poetry", "install"])
+            )
+            .with_unix_socket("/var/run/docker.sock", self.dagger_client.host().unix_socket("/var/run/docker.sock"))
+            .with_env_variable("RUN_IN_AIRBYTE_CI", "1")
+            .with_new_file("/tmp/container_id.txt", contents=str(target_container_id))
         )
         return container
