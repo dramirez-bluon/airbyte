@@ -448,7 +448,11 @@ class RegressionTests(Step):
         ).with_exec(
             ["poetry", "lock", "--no-update"]
         ).with_exec(
+            ["bash", "-c", "echo about to run poetry install; pwd; ls"]
+        ).with_exec(
             ["poetry", "install"]
+        ).with_exec(
+            ["bash", "-c", "echo did poetry install; pwd; ls"]
         ).with_unix_socket(
             "/var/run/docker.sock", self.dagger_client.host().unix_socket("/var/run/docker.sock")
         ).with_env_variable(
