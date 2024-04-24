@@ -120,7 +120,7 @@ def pytest_configure(config: Config) -> None:
     custom_state_path = config.getoption("--state-path")
 
     if config.stash[stash_keys.RUN_IN_AIRBYTE_CI]:
-        config.stash[stash_keys.SHOULD_READ_WITH_STATE] = get_option_or_fail("--should_read_with_state")
+        config.stash[stash_keys.SHOULD_READ_WITH_STATE] = get_option_or_fail(config, "--should-read-with-state")
     elif _should_read_with_state := config.getoption("--should-read-with-state"):
         config.stash[stash_keys.SHOULD_READ_WITH_STATE] = _should_read_with_state
     else:
