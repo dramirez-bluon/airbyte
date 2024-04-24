@@ -237,6 +237,9 @@ The traffic recorded on the control connector is passed to the target connector 
 
 ## Changelog
 
+### 0.15.0
+Updates to run with airbyte-ci.
+
 ### 0.14.2
 Fix KeyError when target & control streams differ.
 
