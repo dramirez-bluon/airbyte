@@ -82,7 +82,7 @@ internal class TestDefaultJdbcDatabase {
                 },
                 { queryContext: ResultSet -> sourceOperations.rowToJson(queryContext) }
             )
-            .use { actual -> Assertions.assertEquals(RECORDS_AS_JSON, actual.toList()) }
+            .use { actual -> Assertions.assertEquals(RECORDS_AS_JSON, actual) }
     }
 
     @Test

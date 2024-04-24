@@ -109,9 +109,9 @@ internal class YamlsTest {
             Yamls.deserializeArray(input).use { iterator ->
                 Assertions.assertEquals(
                     classes,
-                    MoreStreams.toStream(iterator)
-                        .map { e: JsonNode -> Jsons.`object`(e, ToClass::class.java) }
-                        .toList()
+                    MoreStreams.toStream(iterator).map { e: JsonNode ->
+                        Jsons.`object`(e, ToClass::class.java)
+                    }
                 )
             }
         } catch (e: Exception) {

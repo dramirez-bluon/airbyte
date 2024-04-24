@@ -119,9 +119,9 @@ internal class TestJdbcUtils {
             val rs = connection.createStatement().executeQuery("SELECT * FROM id_and_name;")
             val actual =
                 JdbcDatabase.toUnsafeStream(rs) { queryContext: ResultSet ->
-                        sourceOperations.rowToJson(queryContext)
-                    }
-                    .toList()
+                    sourceOperations.rowToJson(queryContext)
+                }
+
             Assertions.assertEquals(RECORDS_AS_JSON, actual)
         }
     }

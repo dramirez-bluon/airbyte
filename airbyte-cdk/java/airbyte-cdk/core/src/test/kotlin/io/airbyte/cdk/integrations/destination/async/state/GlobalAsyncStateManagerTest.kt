@@ -234,9 +234,9 @@ class GlobalAsyncStateManagerTest {
                     expectedDestinationStats,
                 ),
             ),
-            stateWithStats2.keys.toList(),
+            stateWithStats2.keys,
         )
-        assertEquals(listOf(expectedDestinationStats), stateWithStats2.values.toList())
+        assertEquals(listOf(expectedDestinationStats), stateWithStats2.values)
     }
 
     private fun attachDestinationStateStats(
@@ -276,9 +276,9 @@ class GlobalAsyncStateManagerTest {
                         expectedDestinationStats,
                     ),
                 ),
-                stateWithStats.keys.toList(),
+                stateWithStats.keys,
             )
-            assertEquals(listOf(expectedDestinationStats), stateWithStats.values.toList())
+            assertEquals(listOf(expectedDestinationStats), stateWithStats.values)
 
             assertThrows(
                 IllegalArgumentException::class.java,
@@ -338,9 +338,9 @@ class GlobalAsyncStateManagerTest {
                         expectedDestinationStats,
                     ),
                 ),
-                stateWithStats.keys.toList(),
+                stateWithStats.keys,
             )
-            assertEquals(listOf(expectedDestinationStats), stateWithStats.values.toList())
+            assertEquals(listOf(expectedDestinationStats), stateWithStats.values)
         }
 
         @Test
@@ -370,9 +370,9 @@ class GlobalAsyncStateManagerTest {
                         expectedDestinationStats,
                     ),
                 ),
-                stateWithStats.keys.toList(),
+                stateWithStats.keys,
             )
-            assertEquals(listOf(expectedDestinationStats), stateWithStats.values.toList())
+            assertEquals(listOf(expectedDestinationStats), stateWithStats.values)
 
             emittedStatesFromDestination.clear()
 
@@ -396,9 +396,9 @@ class GlobalAsyncStateManagerTest {
                         expectedDestinationStats,
                     ),
                 ),
-                stateWithStats2.keys.toList(),
+                stateWithStats2.keys,
             )
-            assertEquals(listOf(expectedDestinationStats), stateWithStats2.values.toList())
+            assertEquals(listOf(expectedDestinationStats), stateWithStats2.values)
         }
 
         @Test
@@ -428,9 +428,9 @@ class GlobalAsyncStateManagerTest {
                         expectedDestinationStats,
                     ),
                 ),
-                stateWithStats.keys.toList(),
+                stateWithStats.keys,
             )
-            assertEquals(listOf(expectedDestinationStats), stateWithStats.values.toList())
+            assertEquals(listOf(expectedDestinationStats), stateWithStats.values)
             emittedStatesFromDestination.clear()
 
             stateManager.trackState(GLOBAL_STATE_MESSAGE2, STATE_MSG_SIZE, DEFAULT_NAMESPACE)
@@ -452,11 +452,11 @@ class GlobalAsyncStateManagerTest {
                         expectedDestinationStats2,
                     ),
                 ),
-                stateWithStats2.keys.toList(),
+                stateWithStats2.keys,
             )
             assertEquals(
                 listOf(expectedDestinationStats2),
-                stateWithStats2.values.toList(),
+                stateWithStats2.values,
             )
             emittedStatesFromDestination.clear()
 
@@ -480,9 +480,9 @@ class GlobalAsyncStateManagerTest {
                         expectedDestinationStats,
                     ),
                 ),
-                stateWithStats3.keys.toList(),
+                stateWithStats3.keys,
             )
-            assertEquals(listOf(expectedDestinationStats), stateWithStats3.values.toList())
+            assertEquals(listOf(expectedDestinationStats), stateWithStats3.values)
         }
 
         @Test
@@ -515,9 +515,9 @@ class GlobalAsyncStateManagerTest {
                         expectedDestinationStats,
                     ),
                 ),
-                stateWithStats.keys.toList(),
+                stateWithStats.keys,
             )
-            assertEquals(listOf(expectedDestinationStats), stateWithStats.values.toList())
+            assertEquals(listOf(expectedDestinationStats), stateWithStats.values)
             emittedStatesFromDestination.clear()
 
             val afterConvertId0: Long = simulateIncomingRecords(STREAM1_DESC, 10, stateManager)
@@ -542,9 +542,9 @@ class GlobalAsyncStateManagerTest {
                         expectedDestinationStats,
                     ),
                 ),
-                stateWithStats2.keys.toList(),
+                stateWithStats2.keys,
             )
-            assertEquals(listOf(expectedDestinationStats), stateWithStats2.values.toList())
+            assertEquals(listOf(expectedDestinationStats), stateWithStats2.values)
         }
     }
 
@@ -576,9 +576,9 @@ class GlobalAsyncStateManagerTest {
                         expectedDestinationStats,
                     ),
                 ),
-                stateWithStats.keys.toList(),
+                stateWithStats.keys,
             )
-            assertEquals(listOf(expectedDestinationStats), stateWithStats.values.toList())
+            assertEquals(listOf(expectedDestinationStats), stateWithStats.values)
 
             assertThrows(
                 IllegalArgumentException::class.java,
@@ -618,9 +618,9 @@ class GlobalAsyncStateManagerTest {
                         expectedDestinationStats,
                     ),
                 ),
-                stateWithStats.keys.toList(),
+                stateWithStats.keys,
             )
-            assertEquals(listOf(expectedDestinationStats), stateWithStats.values.toList())
+            assertEquals(listOf(expectedDestinationStats), stateWithStats.values)
 
             emittedStatesFromDestination.clear()
 
@@ -645,11 +645,11 @@ class GlobalAsyncStateManagerTest {
                         expectedDestinationStats2,
                     ),
                 ),
-                stateWithStats2.keys.toList(),
+                stateWithStats2.keys,
             )
             assertEquals(
                 listOf(expectedDestinationStats2),
-                stateWithStats2.values.toList(),
+                stateWithStats2.values,
             )
         }
 
@@ -680,9 +680,9 @@ class GlobalAsyncStateManagerTest {
                         expectedDestinationStats,
                     ),
                 ),
-                stateWithStats.keys.toList(),
+                stateWithStats.keys,
             )
-            assertEquals(listOf(expectedDestinationStats), stateWithStats.values.toList())
+            assertEquals(listOf(expectedDestinationStats), stateWithStats.values)
             emittedStatesFromDestination.clear()
 
             stateManager.trackState(STREAM1_STATE_MESSAGE2, STATE_MSG_SIZE, DEFAULT_NAMESPACE)
@@ -704,11 +704,11 @@ class GlobalAsyncStateManagerTest {
                         expectedDestinationStats2,
                     ),
                 ),
-                stateWithStats2.keys.toList(),
+                stateWithStats2.keys,
             )
             assertEquals(
                 listOf(expectedDestinationStats2),
-                stateWithStats2.values.toList(),
+                stateWithStats2.values,
             )
             emittedStatesFromDestination.clear()
 
@@ -733,11 +733,11 @@ class GlobalAsyncStateManagerTest {
                         expectedDestinationStats3,
                     ),
                 ),
-                stateWithStats3.keys.toList(),
+                stateWithStats3.keys,
             )
             assertEquals(
                 listOf(expectedDestinationStats3),
-                stateWithStats3.values.toList(),
+                stateWithStats3.values,
             )
         }
 
@@ -770,9 +770,9 @@ class GlobalAsyncStateManagerTest {
                         expectedDestinationStats,
                     ),
                 ),
-                stateWithStats.keys.toList(),
+                stateWithStats.keys,
             )
-            assertEquals(listOf(expectedDestinationStats), stateWithStats.values.toList())
+            assertEquals(listOf(expectedDestinationStats), stateWithStats.values)
             emittedStatesFromDestination.clear()
 
             stateManager.decrement(stream2StateId, 4)
@@ -803,11 +803,11 @@ class GlobalAsyncStateManagerTest {
                         expectedDestinationStats2,
                     ),
                 ),
-                stateWithStats2.keys.toList(),
+                stateWithStats2.keys,
             )
             assertEquals(
                 listOf(expectedDestinationStats2),
-                stateWithStats2.values.toList(),
+                stateWithStats2.values,
             )
         }
     }

@@ -553,7 +553,6 @@ class AsyncStreamConsumerTest {
                 .stream() // flatten those results into a single list for the simplicity of
                 // comparison
                 .flatMap { s: Stream<*> -> s }
-                .toList()
 
         val expRecords =
             allRecords.map { m: AirbyteMessage ->

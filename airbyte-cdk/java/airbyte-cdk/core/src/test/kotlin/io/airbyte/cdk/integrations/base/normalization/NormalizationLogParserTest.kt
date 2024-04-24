@@ -110,16 +110,14 @@ internal class NormalizationLogParserTest {
         expectedDbtErrors: List<String>
     ) {
         val messages =
-            parser!!
-                .create(
-                    BufferedReader(
-                        InputStreamReader(
-                            ByteArrayInputStream(rawLogs.toByteArray(StandardCharsets.UTF_8)),
-                            StandardCharsets.UTF_8
-                        )
+            parser!!.create(
+                BufferedReader(
+                    InputStreamReader(
+                        ByteArrayInputStream(rawLogs.toByteArray(StandardCharsets.UTF_8)),
+                        StandardCharsets.UTF_8
                     )
                 )
-                .toList()
+            )
 
         Assertions.assertEquals(expectedMessages, messages)
         Assertions.assertEquals(expectedDbtErrors, parser!!.dbtErrors)

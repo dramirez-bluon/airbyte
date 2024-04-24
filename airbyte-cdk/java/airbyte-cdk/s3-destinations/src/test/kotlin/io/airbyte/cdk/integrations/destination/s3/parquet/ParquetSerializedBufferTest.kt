@@ -42,7 +42,7 @@ class ParquetSerializedBufferTest {
                     "column2" to "string value",
                     "another field" to true,
                     "nested_column" to mapOf("array_column" to listOf(1, 2, 3)),
-                    "string_array_column" to Stream.of("test_string", null).toList(),
+                    "string_array_column" to Stream.of("test_string", null),
                     "datetime_with_timezone" to "2022-05-12T15:35:44.192950Z",
                 ),
             )
