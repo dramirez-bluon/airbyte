@@ -103,7 +103,7 @@ class RunStepOptions:
     @staticmethod
     def get_item_or_default(options: Dict[str, Any], key: str, default: Any):
         try:
-            item = dpath.util.get(options, key, separator='/')
+            item = dpath.util.get(options, key, separator="/")
         except KeyError:
             return default
 

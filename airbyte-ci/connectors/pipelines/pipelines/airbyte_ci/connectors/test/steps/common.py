@@ -329,7 +329,7 @@ class RegressionTests(Step):
             "--durations": ["3"],  # Show the 3 slowest tests in the report
         }
 
-    def regression_tests_command(self, start_timestamp: int) -> List[str]:
+    def regression_tests_command(self) -> List[str]:
         return [
             "poetry",
             "run",
@@ -345,8 +345,8 @@ class RegressionTests(Step):
             self.target_version,
             "--pr-url",
             self.pr_url,
-            "--start-timestamp",
-            str(start_timestamp),
+            "--run-id",
+            self.run_id,
             "--should-read-with-state",
             str(self.should_read_with_state),
         ]
@@ -370,6 +370,7 @@ class RegressionTests(Step):
         self.control_version = self.context.run_step_options.get_item_or_default(options, "control-version", "latest")
         self.target_version = self.context.run_step_options.get_item_or_default(options, "target-version", "dev")
         self.should_read_with_state = self.context.run_step_options.get_item_or_default(options, "should-read-with-state", True)
+        self.run_id = os.getenv("GITHUB_RUN_ID") or str(int(time.time()))
 
     async def _run(self, connector_under_test_container: Container) -> StepResult:
         """Run the regression test suite.
@@ -380,12 +381,11 @@ class RegressionTests(Step):
         Returns:
             StepResult: Failure or success of the regression tests with stdout and stderr.
         """
-        start_timestamp = int(time.time())
         container = await self._build_regression_test_container(await connector_under_test_container.id())
-        container = container.with_(hacks.never_fail_exec(self.regression_tests_command(start_timestamp)))
+        container = container.with_(hacks.never_fail_exec(self.regression_tests_command()))
         regression_tests_artifacts_dir = str(self.regression_tests_artifacts_dir)
-        path_to_report = f"{regression_tests_artifacts_dir}/session_{int(start_timestamp)}/report.html"
-        await container.directory(regression_tests_artifacts_dir).export(path_to_report)
+        path_to_report = f"{regression_tests_artifacts_dir}/session_{self.run_id}/report.html"
+        await container.file(path_to_report).export(path_to_report)
         exit_code, stdout, stderr = await get_exec_result(container)
 
         with open(path_to_report, "r") as fp:

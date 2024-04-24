@@ -70,6 +70,7 @@ def pytest_addoption(parser: Parser) -> None:
     parser.addoption("--connection-id")
     parser.addoption("--pr-url", help="The URL of the PR you are testing")
     # Required when running in CI
+    parser.addoption("--run-id", type=str)
     parser.addoption(
         "--should-read-with-state",
         type=bool,
@@ -94,15 +95,15 @@ def pytest_configure(config: Config) -> None:
     )
     config.stash[stash_keys.AIRBYTE_API_KEY] = get_airbyte_api_key()
     config.stash[stash_keys.USER] = user_email
-    start_timestamp = int(time.time())
-    test_artifacts_directory = get_artifacts_directory(start_timestamp)
+    config.stash[stash_keys.SESSION_RUN_ID] = config.getoption("--run-id") or str(int(time.time()))
+    test_artifacts_directory = get_artifacts_directory(config)
     duckdb_path = test_artifacts_directory / "duckdb.db"
     config.stash[stash_keys.DUCKDB_PATH] = duckdb_path
     test_artifacts_directory.mkdir(parents=True, exist_ok=True)
     dagger_log_path = test_artifacts_directory / "dagger.log"
     config.stash[stash_keys.IS_PERMITTED_BOOL] = False
     report_path = test_artifacts_directory / "report.html"
-    config.stash[stash_keys.SESSION_START_TIMESTAMP] = start_timestamp
+
     config.stash[stash_keys.TEST_ARTIFACT_DIRECTORY] = test_artifacts_directory
     dagger_log_path.touch()
     config.stash[stash_keys.DAGGER_LOG_PATH] = dagger_log_path
@@ -165,9 +166,9 @@ def pytest_configure(config: Config) -> None:
     webbrowser.open_new_tab(config.stash[stash_keys.REPORT].path.resolve().as_uri())
 
 
-def get_artifacts_directory(start_timestamp: int) -> Path:
-  suffix = os.environ["GITHUB_RUN_ID"] if "GITHUB_RUN_ID" in os.environ else str(start_timestamp)
-  return MAIN_OUTPUT_DIRECTORY / f"session_{suffix}"
+def get_artifacts_directory(config: pytest.Config) -> Path:
+    run_id = config.stash[stash_keys.SESSION_RUN_ID]
+    return MAIN_OUTPUT_DIRECTORY / f"session_{run_id}"
 
 
 def pytest_collection_modifyitems(config: pytest.Config, items: List[pytest.Item]) -> None:
