@@ -73,7 +73,7 @@ jobs:
           sentry_dsn: ${{ secrets.SENTRY_AIRBYTE_CI_DSN }}
           git_branch: ${{ steps.extract_branch.outputs.branch }}
           git_revision: ${{ steps.fetch_last_commit_id_pr.outputs.commit_id }}
-          github_token: ${{ env.PAT }}
+          github_token: ${{ secrets.CATHERINE_PAT_REGRESSION_TESTS }}
           s3_build_cache_access_key_id: ${{ secrets.SELF_RUNNER_AWS_ACCESS_KEY_ID }}
           s3_build_cache_secret_key: ${{ secrets.SELF_RUNNER_AWS_SECRET_ACCESS_KEY }}
           subcommand: "connectors --name ${{ github.event.inputs.connector_name }} test --only-step connector_regression_tests --connector_regression_tests.connection-id=${{ github.event.inputs.connection_id }}} --connector_regression_tests.pr-url=${{ github.event.inputs.pr_url }}"

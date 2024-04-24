@@ -441,8 +441,10 @@ class RegressionTests(Step):
             ["poetry", "source", "add", "--priority=supplemental", "airbyte-platform-internal-source",
              "https://github.com/airbytehq/airbyte-platform-internal.git"]
         ).with_exec(
-            ["poetry", "config", "http-basic.airbyte-platform-internal-source", "octavia-squidington-iii",
+            ["poetry", "config", "http-basic.airbyte-platform-internal-source", self.context.ci_git_user,
              self.context.ci_github_access_token]
+        ).with_exec(
+            ["pip", "install", f"git+https://clnoll:{self.context.ci_github_access_token}@github.com/airbytehq/airbyte-platform-internal#subdirectory=tools/connection-retriever"]
         ).with_exec(
             ["poetry", "lock", "--no-update"]
         ).with_exec(
