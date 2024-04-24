@@ -70,7 +70,6 @@ def pytest_addoption(parser: Parser) -> None:
     parser.addoption("--connection-id")
     parser.addoption("--pr-url", help="The URL of the PR you are testing")
     # Required when running in CI
-    parser.addoption("--start-timestamp", type=int)
     parser.addoption(
         "--should-read-with-state",
         type=bool,
@@ -95,8 +94,8 @@ def pytest_configure(config: Config) -> None:
     )
     config.stash[stash_keys.AIRBYTE_API_KEY] = get_airbyte_api_key()
     config.stash[stash_keys.USER] = user_email
-    start_timestamp = int(config.getoption("--start-timestamp") or time.time())
-    test_artifacts_directory = MAIN_OUTPUT_DIRECTORY / f"session_{start_timestamp}"
+    start_timestamp = int(time.time())
+    test_artifacts_directory = get_artifacts_directory(start_timestamp)
     duckdb_path = test_artifacts_directory / "duckdb.db"
     config.stash[stash_keys.DUCKDB_PATH] = duckdb_path
     test_artifacts_directory.mkdir(parents=True, exist_ok=True)
@@ -164,6 +163,11 @@ def pytest_configure(config: Config) -> None:
         config,
     )
     webbrowser.open_new_tab(config.stash[stash_keys.REPORT].path.resolve().as_uri())
+
+
+def get_artifacts_directory(start_timestamp: int) -> Path:
+  suffix = os.environ["GITHUB_RUN_ID"] if "GITHUB_RUN_ID" in os.environ else str(start_timestamp)
+  return MAIN_OUTPUT_DIRECTORY / f"session_{suffix}"
 
 
 def pytest_collection_modifyitems(config: pytest.Config, items: List[pytest.Item]) -> None:

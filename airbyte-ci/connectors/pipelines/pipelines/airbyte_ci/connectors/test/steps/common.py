@@ -359,27 +359,17 @@ class RegressionTests(Step):
         """
         super().__init__(context)
         self.connector_image = context.docker_image.split(":")[0]
-        print(self.context.run_step_options.step_params)
         options = self.context.run_step_options.step_params.get(CONNECTOR_TEST_STEP_ID.CONNECTOR_REGRESSION_TESTS, {})
 
-        self.connection_id = self._get_item_or_default(options, "connection-id", None)
-        self.pr_url = self._get_item_or_default(options, "pr-url", None)
+        self.connection_id = self.context.run_step_options.get_item_or_default(options, "connection-id", None)
+        self.pr_url = self.context.run_step_options.get_item_or_default(options, "pr-url", None)
 
         if not self.connection_id and self.pr_url:
             raise ValueError("`connection-id` and `pr-url` are required to run regression tests.")
 
-        self.control_version = self._get_item_or_default(options, "control-version", "latest")
-        self.target_version = self._get_item_or_default(options, "target-version", "dev")
-        self.should_read_with_state = self._get_item_or_default(options, "should-read-with-state", True)
-
-    @staticmethod
-    def _get_item_or_default(options: Dict[str, Any], key: str, default: Any):
-        item = options.get(key)
-        if not isinstance(item, List):
-            return item or default
-        if len(item) > 1:
-            raise ValueError(f"Only one value for {key} is allowed. Got {len(item)}")
-        return item[0] if item else default
+        self.control_version = self.context.run_step_options.get_item_or_default(options, "control-version", "latest")
+        self.target_version = self.context.run_step_options.get_item_or_default(options, "target-version", "dev")
+        self.should_read_with_state = self.context.run_step_options.get_item_or_default(options, "should-read-with-state", True)
 
     async def _run(self, connector_under_test_container: Container) -> StepResult:
         """Run the regression test suite.
@@ -394,8 +384,8 @@ class RegressionTests(Step):
         container = await self._build_regression_test_container(await connector_under_test_container.id())
         container = container.with_(hacks.never_fail_exec(self.regression_tests_command(start_timestamp)))
         regression_tests_artifacts_dir = str(self.regression_tests_artifacts_dir)
-        await container.directory(regression_tests_artifacts_dir).export(regression_tests_artifacts_dir)
         path_to_report = f"{regression_tests_artifacts_dir}/session_{int(start_timestamp)}/report.html"
+        await container.directory(regression_tests_artifacts_dir).export(path_to_report)
         exit_code, stdout, stderr = await get_exec_result(container)
 
         with open(path_to_report, "r") as fp:
