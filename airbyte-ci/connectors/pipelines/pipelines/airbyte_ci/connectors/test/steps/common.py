@@ -330,7 +330,6 @@ class RegressionTests(Step):
         }
 
     def regression_tests_command(self, start_timestamp: int) -> List[str]:
-        return ["poetry", "self", "show"]
         return [
             "poetry",
             "run",
