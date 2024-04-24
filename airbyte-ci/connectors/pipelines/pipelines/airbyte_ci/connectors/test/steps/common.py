@@ -418,7 +418,7 @@ class RegressionTests(Step):
     async def _build_regression_test_container(self, target_container_id: str) -> Container:
         """Create a container to run regression tests."""
         main_logger.info(
-            f"_build_regression_test_container(): git credentials={[self.context.ci_git_user, bool(self.context.ci_github_access_token)]}")
+            f"_build_regression_test_container(): gsm credentials={os.getenv('GCP_GSM_CREDENTIALS') is not None}")
 
         container = with_python_base(self.context)
 
@@ -446,8 +446,6 @@ class RegressionTests(Step):
             ["pip", "install", f"git+https://octavia-squidington-iii:{self.context.ci_github_access_token}@github.com/airbytehq/airbyte-platform-internal#subdirectory=tools/connection-retriever"]
         ).with_exec(
             ["poetry", "lock", "--no-update"]
-        ).with_exec(
-            ["bash", "-c", "echo about to run poetry install; pwd; ls"]
         ).with_exec(
             ["poetry", "install"]
         ).with_exec(
