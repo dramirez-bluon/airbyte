@@ -154,7 +154,6 @@ def should_use_remote_secrets(use_remote_secrets: Optional[bool]) -> bool:
         "migrate-to-poetry": "pipelines.airbyte_ci.connectors.migrate_to_poetry.commands.migrate_to_poetry",
         "upgrade_base_image": "pipelines.airbyte_ci.connectors.upgrade_base_image.commands.upgrade_base_image",
         "upgrade_cdk": "pipelines.airbyte_ci.connectors.upgrade_cdk.commands.bump_version",
-        "run_regression_tests": "pipelines.airbyte_ci.connectors.run_regression_tests.commands.test",
     },
 )
 @click.option(
