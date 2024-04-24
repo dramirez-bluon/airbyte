@@ -456,6 +456,8 @@ class RegressionTests(Step):
             "/var/run/docker.sock", self.dagger_client.host().unix_socket("/var/run/docker.sock")
         ).with_env_variable(
             "RUN_IN_AIRBYTE_CI", "1"
+        ).with_env_variable(
+            "GCP_GSM_CREDENTIALS", os.getenv("GCP_GSM_CREDENTIALS")
         ).with_new_file(
             "/tmp/container_id.txt", contents=str(target_container_id)
         )
